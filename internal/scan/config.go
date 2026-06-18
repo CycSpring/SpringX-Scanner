@@ -1,0 +1,128 @@
+package scan
+
+import (
+	"math"
+	"runtime"
+	"strconv"
+	"strings"
+	"time"
+)
+
+type Config struct {
+	Version             string
+	WorkDir             string
+	TargetURL           string
+	TargetIP            string
+	URLFile             string
+	IPFile              string
+	Cyber               string
+	Spy                 string
+	Ports               string
+	Proxy               string
+	OutName             string
+	Web                 bool
+	NoBrowser           bool
+	NoPing              bool
+	NoPOC               bool
+	Threads             int
+	DoneMinutes         int
+	ChanRatio           string
+	Platform            string
+	Size                int
+	GonmapTimeout       int
+	NucleiTags          []string
+	NucleiSeverity      string
+	POCConcurrency      int
+	Engines             string
+	TemplateDir         string
+	TempDir             string
+	RawArgs             []string
+	AcceptedCompatFlags map[string]any
+}
+
+func (c Config) Timeout() time.Duration {
+	seconds := c.GonmapTimeout
+	if seconds <= 0 {
+		seconds = 5
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (c Config) MaxDuration() time.Duration {
+	if c.DoneMinutes <= 0 {
+		return 0
+	}
+	return time.Duration(c.DoneMinutes) * time.Minute
+}
+
+func (c Config) PortConcurrency() int {
+	if c.Threads > 0 {
+		return clamp(c.Threads*20, 5, 500)
+	}
+	ratio := strings.TrimSpace(c.ChanRatio)
+	if ratio == "" {
+		return 80
+	}
+	if n, err := strconv.Atoi(ratio); err == nil && n > 0 {
+		return clamp(n, 5, 500)
+	}
+	if f, err := strconv.ParseFloat(ratio, 64); err == nil && f > 0 {
+		if f <= 1 {
+			return clamp(int(math.Round(100*f)), runtime.NumCPU(), 500)
+		}
+		return clamp(int(math.Round(f)), 5, 500)
+	}
+	return 80
+}
+
+func (c Config) PocConcurrency() int {
+	if c.POCConcurrency > 0 {
+		return clamp(c.POCConcurrency, 1, 100)
+	}
+	return 5
+}
+
+func (c Config) TargetLimit() int {
+	if c.Size <= 0 {
+		return 100
+	}
+	return c.Size
+}
+
+func (c Config) Parameters() map[string]any {
+	return map[string]any{
+		"url":             c.TargetURL,
+		"ip":              c.TargetIP,
+		"urlfile":         c.URLFile,
+		"ipfile":          c.IPFile,
+		"ports":           c.Ports,
+		"proxy":           c.Proxy,
+		"outname":         c.OutName,
+		"web":             c.Web,
+		"no-browser":      c.NoBrowser,
+		"noping":          c.NoPing,
+		"nopoc":           c.NoPOC,
+		"threads":         c.Threads,
+		"done":            c.DoneMinutes,
+		"chan":            c.ChanRatio,
+		"platform":        c.Platform,
+		"size":            c.Size,
+		"gonmap-timeout":  c.GonmapTimeout,
+		"nuclei-tags":     c.NucleiTags,
+		"nuclei-severity": c.NucleiSeverity,
+		"poc-concurrency": c.POCConcurrency,
+		"engines":         c.Engines,
+		"template-dir":    c.TemplateDir,
+		"compat":          c.AcceptedCompatFlags,
+	}
+}
+
+func clamp(value, minValue, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
