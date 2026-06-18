@@ -20,6 +20,7 @@ type Config struct {
 	TemplateDir string
 	Tags        []string
 	Severity    string
+	IDs         []string
 	Concurrency int
 	Timeout     int
 	Proxy       string
@@ -42,7 +43,7 @@ func Run(ctx context.Context, cfg Config) ([]model.Vulnerability, error) {
 	options := []lib.NucleiSDKOptions{
 		lib.DisableUpdateCheck(),
 		lib.WithTemplatesOrWorkflows(lib.TemplateSources{Templates: []string{cfg.TemplateDir}}),
-		lib.WithTemplateFilters(lib.TemplateFilters{Tags: cfg.Tags, Severity: cfg.Severity}),
+		lib.WithTemplateFilters(lib.TemplateFilters{Tags: cfg.Tags, Severity: cfg.Severity, IDs: cfg.IDs}),
 		lib.WithConcurrency(lib.Concurrency{
 			TemplateConcurrency:           max(1, cfg.Concurrency),
 			HostConcurrency:               max(1, cfg.Concurrency),
@@ -184,5 +185,5 @@ func max(a, b int) int {
 }
 
 func (c Config) String() string {
-	return fmt.Sprintf("targets=%d templates=%s severity=%s tags=%s", len(c.Targets), c.TemplateDir, c.Severity, strings.Join(c.Tags, ","))
+	return fmt.Sprintf("targets=%d templates=%s severity=%s tags=%s ids=%s", len(c.Targets), c.TemplateDir, c.Severity, strings.Join(c.Tags, ","), strings.Join(c.IDs, ","))
 }

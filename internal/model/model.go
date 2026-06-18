@@ -24,7 +24,23 @@ type ScanInfo struct {
 	POCExecuted   bool      `json:"poc_executed"`
 	POCSkipped    bool      `json:"poc_skipped"`
 	POCSkipReason string    `json:"poc_skip_reason,omitempty"`
+	POC           POCInfo   `json:"poc"`
 	Errors        []string  `json:"errors,omitempty"`
+}
+
+type POCInfo struct {
+	Engine      string   `json:"engine,omitempty"`
+	Executed    bool     `json:"executed"`
+	Skipped     bool     `json:"skipped"`
+	SkipReason  string   `json:"skip_reason,omitempty"`
+	TemplateDir string   `json:"template_dir,omitempty"`
+	Targets     int      `json:"targets"`
+	Findings    int      `json:"findings"`
+	Duration    string   `json:"duration,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Severity    string   `json:"severity,omitempty"`
+	IDs         []string `json:"ids,omitempty"`
+	Error       string   `json:"error,omitempty"`
 }
 
 type ReportPaths struct {

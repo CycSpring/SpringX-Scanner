@@ -16,38 +16,40 @@ import (
 )
 
 type scanOptions struct {
-	targetURL      string
-	targetIP       string
-	urlFile        string
-	ipFile         string
-	cyber          string
-	spy            string
-	ports          string
-	proxy          string
-	outName        string
-	web            bool
-	noBrowser      bool
-	dbs            bool
-	risk           bool
-	deepScan       bool
-	noPing         bool
-	noPOC          bool
-	noCrack        bool
-	noImg          bool
-	random         bool
-	rdp            bool
-	spyOnly        bool
-	threads        int
-	doneMinutes    int
-	chanRatio      string
-	platform       string
-	size           int
-	gonmapTimeout  int
-	nucleiTags     string
-	nucleiSeverity string
-	xrayPOCName    string
-	pocConcurrency int
-	engines        string
+	targetURL         string
+	targetIP          string
+	urlFile           string
+	ipFile            string
+	cyber             string
+	spy               string
+	ports             string
+	proxy             string
+	outName           string
+	web               bool
+	noBrowser         bool
+	dbs               bool
+	risk              bool
+	deepScan          bool
+	noPing            bool
+	noPOC             bool
+	noCrack           bool
+	noImg             bool
+	random            bool
+	rdp               bool
+	spyOnly           bool
+	threads           int
+	doneMinutes       int
+	chanRatio         string
+	platform          string
+	size              int
+	gonmapTimeout     int
+	nucleiTags        string
+	nucleiSeverity    string
+	nucleiIDs         string
+	nucleiTemplateDir string
+	xrayPOCName       string
+	pocConcurrency    int
+	engines           string
 }
 
 var scanOpts scanOptions
@@ -65,6 +67,11 @@ var scanCmd = &cobra.Command{
 		wd, err := os.Getwd()
 		if err != nil {
 			return err
+		}
+
+		templateDir := scanOpts.nucleiTemplateDir
+		if templateDir == "" {
+			templateDir = filepath.Join(wd, "pocs", "nuclei")
 		}
 
 		cfg := scan.Config{
@@ -91,9 +98,10 @@ var scanCmd = &cobra.Command{
 			GonmapTimeout:  scanOpts.gonmapTimeout,
 			NucleiTags:     splitCSV(scanOpts.nucleiTags),
 			NucleiSeverity: scanOpts.nucleiSeverity,
+			NucleiIDs:      splitCSV(scanOpts.nucleiIDs),
 			POCConcurrency: scanOpts.pocConcurrency,
 			Engines:        scanOpts.engines,
-			TemplateDir:    filepath.Join(wd, "pocs", "nuclei"),
+			TemplateDir:    templateDir,
 			TempDir:        `D:\Temp`,
 			RawArgs:        os.Args[1:],
 			AcceptedCompatFlags: map[string]any{
@@ -157,6 +165,8 @@ func init() {
 	scanCmd.Flags().IntVar(&scanOpts.gonmapTimeout, "gonmap-timeout", 5, "TCP connect timeout in seconds")
 	scanCmd.Flags().StringVar(&scanOpts.nucleiTags, "nuclei-tags", "", "comma-separated nuclei tags")
 	scanCmd.Flags().StringVar(&scanOpts.nucleiSeverity, "nuclei-severity", "", "comma-separated nuclei severities")
+	scanCmd.Flags().StringVar(&scanOpts.nucleiIDs, "nuclei-ids", "", "comma-separated nuclei template IDs")
+	scanCmd.Flags().StringVar(&scanOpts.nucleiTemplateDir, "nuclei-template-dir", "", "override nuclei template directory")
 	scanCmd.Flags().StringVar(&scanOpts.xrayPOCName, "xray-poc-name", "", "compatibility flag, accepted but not implemented in MVP")
 	scanCmd.Flags().IntVar(&scanOpts.pocConcurrency, "poc-concurrency", 5, "POC scanning concurrency")
 	scanCmd.Flags().StringVar(&scanOpts.engines, "engines", "", "compatibility engine selector")

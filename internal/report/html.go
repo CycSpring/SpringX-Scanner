@@ -102,6 +102,23 @@ const htmlTemplate = `<!doctype html>
   </section>
 
   {{if .Scan.POCSkipped}}<p class="muted">POC 未执行：{{.Scan.POCSkipReason}}</p>{{end}}
+  {{if .Scan.POC.Engine}}
+  <h2>POC 状态</h2>
+  <table>
+    <tbody>
+      <tr><th>引擎</th><td>{{.Scan.POC.Engine}}</td></tr>
+      <tr><th>模板目录</th><td><code>{{.Scan.POC.TemplateDir}}</code></td></tr>
+      <tr><th>目标数</th><td>{{.Scan.POC.Targets}}</td></tr>
+      <tr><th>发现数</th><td>{{.Scan.POC.Findings}}</td></tr>
+      <tr><th>耗时</th><td>{{.Scan.POC.Duration}}</td></tr>
+      <tr><th>Tags</th><td>{{join .Scan.POC.Tags}}</td></tr>
+      <tr><th>Severity</th><td>{{.Scan.POC.Severity}}</td></tr>
+      <tr><th>IDs</th><td>{{join .Scan.POC.IDs}}</td></tr>
+      {{if .Scan.POC.SkipReason}}<tr><th>跳过原因</th><td>{{.Scan.POC.SkipReason}}</td></tr>{{end}}
+      {{if .Scan.POC.Error}}<tr><th>错误</th><td>{{.Scan.POC.Error}}</td></tr>{{end}}
+    </tbody>
+  </table>
+  {{end}}
   {{if .Scan.Errors}}<p class="muted">错误：{{join .Scan.Errors}}</p>{{end}}
 
   <h2>存活服务</h2>

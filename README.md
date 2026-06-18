@@ -33,7 +33,7 @@ go build -o dist\springx.exe .
 .\dist\springx.exe scan -u https://example.com --web --no-browser --outname SpringX --nopoc
 .\dist\springx.exe scan -i 127.0.0.1 -p 80,443 -t 3 --nopoc
 .\dist\springx.exe scan --urlfile urls.txt --nuclei-severity critical,high
+.\dist\springx.exe scan -u http://127.0.0.1:8080 --nuclei-template-dir .\testdata\nuclei --nuclei-ids springx-smoke
 ```
 
 By default, Nuclei templates are loaded from `pocs\nuclei` under the process working directory. If the directory is missing, scanning still completes and the reports explicitly show that POC execution was skipped.
-

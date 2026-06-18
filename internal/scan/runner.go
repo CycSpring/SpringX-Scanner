@@ -106,36 +106,50 @@ func (r *Runner) Run(ctx context.Context) (*model.Result, error) {
 }
 
 func (r *Runner) runPOC(ctx context.Context, result *model.Result) error {
+	result.Scan.POC = model.POCInfo{
+		Engine:      "nuclei",
+		TemplateDir: r.cfg.TemplateDir,
+		Tags:        append([]string{}, r.cfg.NucleiTags...),
+		Severity:    r.cfg.NucleiSeverity,
+		IDs:         append([]string{}, r.cfg.NucleiIDs...),
+	}
 	if r.cfg.NoPOC {
-		result.Scan.POCSkipped = true
-		result.Scan.POCSkipReason = "--nopoc enabled"
+		r.markPOCSkipped(result, "--nopoc enabled")
 		r.Logf("[INF] POC scan skipped: --nopoc enabled")
+		r.emitPOCCompleted(result)
 		return nil
 	}
 	if !dirHasTemplates(r.cfg.TemplateDir) {
-		result.Scan.POCSkipped = true
-		result.Scan.POCSkipReason = "nuclei template directory not found or empty: " + r.cfg.TemplateDir
+		r.markPOCSkipped(result, "nuclei template directory not found or empty: "+r.cfg.TemplateDir)
 		r.Logf("[WRN] POC scan skipped: %s", result.Scan.POCSkipReason)
+		r.emitPOCCompleted(result)
 		return nil
 	}
 
 	targets := nucleiTargets(result.Targets)
 	if len(targets) == 0 {
-		result.Scan.POCSkipped = true
-		result.Scan.POCSkipReason = "no HTTP targets for POC scanning"
+		r.markPOCSkipped(result, "no HTTP targets for POC scanning")
 		r.Logf("[INF] POC scan skipped: no HTTP targets")
+		r.emitPOCCompleted(result)
 		return nil
 	}
 
+	start := time.Now()
 	result.Scan.POCExecuted = true
-	r.Logf("[INF] 开始 Nuclei POC 扫描，目标:%d 模板:%s", len(targets), r.cfg.TemplateDir)
-	r.emitter.Emit("poc_started", map[string]any{"engine": "nuclei", "targets": len(targets)})
+	result.Scan.POC.Executed = true
+	result.Scan.POC.Targets = len(targets)
+	r.Logf("[INF] 开始 Nuclei POC 扫描，目标:%d 模板:%s tags:%s severity:%s ids:%s", len(targets), r.cfg.TemplateDir, strings.Join(r.cfg.NucleiTags, ","), r.cfg.NucleiSeverity, strings.Join(r.cfg.NucleiIDs, ","))
+	r.emitter.Emit("poc_started", map[string]any{
+		"engine": "nuclei", "targets": len(targets), "template_dir": r.cfg.TemplateDir,
+		"tags": r.cfg.NucleiTags, "severity": r.cfg.NucleiSeverity, "ids": r.cfg.NucleiIDs,
+	})
 
 	vulns, err := nucleirunner.Run(ctx, nucleirunner.Config{
 		Targets:     targets,
 		TemplateDir: r.cfg.TemplateDir,
 		Tags:        r.cfg.NucleiTags,
 		Severity:    r.cfg.NucleiSeverity,
+		IDs:         r.cfg.NucleiIDs,
 		Concurrency: r.cfg.PocConcurrency(),
 		Timeout:     int(r.cfg.Timeout().Seconds()),
 		Proxy:       r.cfg.Proxy,
@@ -147,8 +161,30 @@ func (r *Runner) runPOC(ctx context.Context, result *model.Result) error {
 		},
 	})
 	result.Vulnerabilities = append(result.Vulnerabilities, vulns...)
-	r.Logf("[INF] Nuclei POC 扫描完成，发现 %d 个结果", len(vulns))
+	result.Scan.POC.Findings = len(vulns)
+	result.Scan.POC.Duration = time.Since(start).Round(time.Millisecond).String()
+	if err != nil {
+		result.Scan.POC.Error = err.Error()
+	}
+	r.Logf("[INF] Nuclei POC 扫描完成，发现 %d 个结果，耗时:%s", len(vulns), result.Scan.POC.Duration)
+	r.emitPOCCompleted(result)
 	return err
+}
+
+func (r *Runner) markPOCSkipped(result *model.Result, reason string) {
+	result.Scan.POCSkipped = true
+	result.Scan.POCSkipReason = reason
+	result.Scan.POC.Skipped = true
+	result.Scan.POC.SkipReason = reason
+}
+
+func (r *Runner) emitPOCCompleted(result *model.Result) {
+	r.emitter.Emit("poc_completed", map[string]any{
+		"engine": result.Scan.POC.Engine, "targets": result.Scan.POC.Targets,
+		"findings": result.Scan.POC.Findings, "duration": result.Scan.POC.Duration,
+		"template_dir": result.Scan.POC.TemplateDir, "skipped": result.Scan.POC.Skipped,
+		"skip_reason": result.Scan.POC.SkipReason, "error": result.Scan.POC.Error,
+	})
 }
 
 func (r *Runner) finish(result *model.Result, status string, err error) (*model.Result, error) {

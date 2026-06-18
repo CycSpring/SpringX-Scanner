@@ -17,6 +17,24 @@ func RenderMarkdown(result *model.Result) string {
 	fmt.Fprintf(&b, "- 耗时: %s\n", result.Scan.Duration)
 	fmt.Fprintf(&b, "- 存活服务: %d\n", len(result.Targets))
 	fmt.Fprintf(&b, "- POC 发现: %d\n", len(result.Vulnerabilities))
+	if result.Scan.POC.Engine != "" {
+		fmt.Fprintf(&b, "- POC 引擎: %s\n", result.Scan.POC.Engine)
+		fmt.Fprintf(&b, "- POC 模板目录: `%s`\n", result.Scan.POC.TemplateDir)
+		fmt.Fprintf(&b, "- POC 目标数: %d\n", result.Scan.POC.Targets)
+		fmt.Fprintf(&b, "- POC 耗时: %s\n", md(firstNonEmpty(result.Scan.POC.Duration, "-")))
+		if len(result.Scan.POC.Tags) > 0 {
+			fmt.Fprintf(&b, "- Nuclei Tags: `%s`\n", strings.Join(result.Scan.POC.Tags, ","))
+		}
+		if result.Scan.POC.Severity != "" {
+			fmt.Fprintf(&b, "- Nuclei Severity: `%s`\n", result.Scan.POC.Severity)
+		}
+		if len(result.Scan.POC.IDs) > 0 {
+			fmt.Fprintf(&b, "- Nuclei IDs: `%s`\n", strings.Join(result.Scan.POC.IDs, ","))
+		}
+		if result.Scan.POC.Error != "" {
+			fmt.Fprintf(&b, "- POC 错误: %s\n", result.Scan.POC.Error)
+		}
+	}
 	if result.Scan.POCSkipped {
 		fmt.Fprintf(&b, "- POC 状态: 未执行（%s）\n", result.Scan.POCSkipReason)
 	} else if result.Scan.POCExecuted {

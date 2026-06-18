@@ -32,6 +32,7 @@ type Config struct {
 	GonmapTimeout       int
 	NucleiTags          []string
 	NucleiSeverity      string
+	NucleiIDs           []string
 	POCConcurrency      int
 	Engines             string
 	TemplateDir         string
@@ -91,29 +92,30 @@ func (c Config) TargetLimit() int {
 
 func (c Config) Parameters() map[string]any {
 	return map[string]any{
-		"url":             c.TargetURL,
-		"ip":              c.TargetIP,
-		"urlfile":         c.URLFile,
-		"ipfile":          c.IPFile,
-		"ports":           c.Ports,
-		"proxy":           c.Proxy,
-		"outname":         c.OutName,
-		"web":             c.Web,
-		"no-browser":      c.NoBrowser,
-		"noping":          c.NoPing,
-		"nopoc":           c.NoPOC,
-		"threads":         c.Threads,
-		"done":            c.DoneMinutes,
-		"chan":            c.ChanRatio,
-		"platform":        c.Platform,
-		"size":            c.Size,
-		"gonmap-timeout":  c.GonmapTimeout,
-		"nuclei-tags":     c.NucleiTags,
-		"nuclei-severity": c.NucleiSeverity,
-		"poc-concurrency": c.POCConcurrency,
-		"engines":         c.Engines,
-		"template-dir":    c.TemplateDir,
-		"compat":          c.AcceptedCompatFlags,
+		"url":                 c.TargetURL,
+		"ip":                  c.TargetIP,
+		"urlfile":             c.URLFile,
+		"ipfile":              c.IPFile,
+		"ports":               c.Ports,
+		"proxy":               c.Proxy,
+		"outname":             c.OutName,
+		"web":                 c.Web,
+		"no-browser":          c.NoBrowser,
+		"noping":              c.NoPing,
+		"nopoc":               c.NoPOC,
+		"threads":             c.Threads,
+		"done":                c.DoneMinutes,
+		"chan":                c.ChanRatio,
+		"platform":            c.Platform,
+		"size":                c.Size,
+		"gonmap-timeout":      c.GonmapTimeout,
+		"nuclei-tags":         c.NucleiTags,
+		"nuclei-severity":     c.NucleiSeverity,
+		"nuclei-ids":          c.NucleiIDs,
+		"poc-concurrency":     c.POCConcurrency,
+		"engines":             c.Engines,
+		"nuclei-template-dir": c.TemplateDir,
+		"compat":              c.AcceptedCompatFlags,
 	}
 }
 

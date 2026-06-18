@@ -1,0 +1,20 @@
+id: springx-smoke
+
+info:
+  name: SpringX local smoke finding
+  author: springx
+  severity: info
+  description: Deterministic SpringX smoke template for local integration tests.
+  tags: springx,smoke
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/springx-smoke"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "springx-smoke-ok"
+
