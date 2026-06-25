@@ -7,21 +7,37 @@ import (
 	"time"
 )
 
+const ProtocolVersion = "springx.events.v1"
+
 // Emitter writes line-delimited JSON events for future WebUI consumption.
 type Emitter struct {
-	w  io.Writer
-	mu sync.Mutex
+	w      io.Writer
+	mu     sync.Mutex
+	scanID string
+	seq    uint64
 }
 
 type Event struct {
-	Type  string         `json:"type"`
-	Time  time.Time      `json:"time"`
-	Data  map[string]any `json:"data,omitempty"`
-	Error string         `json:"error,omitempty"`
+	Version string         `json:"version"`
+	Type    string         `json:"type"`
+	ScanID  string         `json:"scan_id,omitempty"`
+	Seq     uint64         `json:"seq"`
+	Time    time.Time      `json:"time"`
+	Data    map[string]any `json:"data,omitempty"`
+	Error   string         `json:"error,omitempty"`
 }
 
 func NewEmitter(w io.Writer) *Emitter {
 	return &Emitter{w: w}
+}
+
+func (e *Emitter) SetScanID(scanID string) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.scanID = scanID
 }
 
 func (e *Emitter) Emit(eventType string, data map[string]any) {
@@ -42,5 +58,9 @@ func (e *Emitter) write(ev Event) {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.seq++
+	ev.Version = ProtocolVersion
+	ev.ScanID = e.scanID
+	ev.Seq = e.seq
 	_ = json.NewEncoder(e.w).Encode(ev)
 }

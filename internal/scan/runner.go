@@ -39,6 +39,7 @@ func (r *Runner) Run(ctx context.Context) (*model.Result, error) {
 		},
 		Parameters: r.cfg.Parameters(),
 	}
+	r.emitter.SetScanID(result.Scan.ID)
 
 	r.Logf(">>> Start scan task")
 	r.Logf("[INF] SpringX self-owned scanner core %s", r.cfg.Version)
@@ -202,6 +203,12 @@ func (r *Runner) finish(result *model.Result, status string, err error) (*model.
 		return result, err
 	}
 	return result, nil
+}
+
+func (r *Runner) EmitReportWritten(paths model.ReportPaths) {
+	r.emitter.Emit("report_written", map[string]any{
+		"html": paths.HTML, "markdown": paths.Markdown, "json": paths.JSON,
+	})
 }
 
 func (r *Runner) Logf(format string, args ...any) {

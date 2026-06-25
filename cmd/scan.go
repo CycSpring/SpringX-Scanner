@@ -118,13 +118,15 @@ var scanCmd = &cobra.Command{
 			return scanErr
 		}
 
-		if _, err := report.WriteAll(result, wd); err != nil {
+		paths, err := report.WriteAll(result, wd)
+		if err != nil {
 			runner.Logf("[ERR] Could not write reports: %v", err)
 			if scanErr != nil {
 				return fmt.Errorf("%w; report error: %v", scanErr, err)
 			}
 			return err
 		}
+		runner.EmitReportWritten(paths)
 
 		if scanErr != nil {
 			return scanErr
