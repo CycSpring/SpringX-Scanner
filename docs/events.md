@@ -2,6 +2,8 @@
 
 SpringX writes line-delimited JSON events to stdout so the WebUI can follow a scan without parsing human log text. Human logs remain enabled by default for compatibility with the current WebUI.
 
+Use `--log-format jsonl` or `--jsonl-only` when stdout must contain only JSONL events. In that mode, Banner, disclaimer, and human-readable log lines are suppressed; human logs are emitted as `log` events instead.
+
 ## Envelope
 
 Every event uses the same envelope:
@@ -50,6 +52,18 @@ Data:
 ```json
 {
   "url": "https://example.com"
+}
+```
+
+### `log`
+
+Emitted instead of human-readable stdout log lines when `--log-format jsonl` or `--jsonl-only` is enabled.
+
+Data:
+
+```json
+{
+  "message": "[INF] SpringX self-owned scanner core v0.1.0-mvp"
 }
 ```
 

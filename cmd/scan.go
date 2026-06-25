@@ -50,6 +50,8 @@ type scanOptions struct {
 	xrayPOCName       string
 	pocConcurrency    int
 	engines           string
+	logFormat         string
+	jsonlOnly         bool
 }
 
 var scanOpts scanOptions
@@ -58,8 +60,18 @@ var scanCmd = &cobra.Command{
 	Use:   "scan",
 	Short: "Run an authorized SpringX scan",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		printBanner()
-		printDisclaimer()
+		logFormat := scanOpts.logFormat
+		if scanOpts.jsonlOnly {
+			logFormat = "jsonl"
+		}
+		logFormat = normalizedLogFormat(logFormat)
+		if logFormat != "mixed" && logFormat != "jsonl" {
+			return fmt.Errorf("unsupported --log-format %q, expected mixed or jsonl", logFormat)
+		}
+		if logFormat != "jsonl" {
+			printBanner()
+			printDisclaimer()
+		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -103,6 +115,7 @@ var scanCmd = &cobra.Command{
 			Engines:        scanOpts.engines,
 			TemplateDir:    templateDir,
 			TempDir:        `D:\Temp`,
+			LogFormat:      logFormat,
 			RawArgs:        os.Args[1:],
 			AcceptedCompatFlags: map[string]any{
 				"dbs": scanOpts.dbs, "risk": scanOpts.risk, "deep-scan": scanOpts.deepScan,
@@ -172,6 +185,8 @@ func init() {
 	scanCmd.Flags().StringVar(&scanOpts.xrayPOCName, "xray-poc-name", "", "compatibility flag, accepted but not implemented in MVP")
 	scanCmd.Flags().IntVar(&scanOpts.pocConcurrency, "poc-concurrency", 5, "POC scanning concurrency")
 	scanCmd.Flags().StringVar(&scanOpts.engines, "engines", "", "compatibility engine selector")
+	scanCmd.Flags().StringVar(&scanOpts.logFormat, "log-format", "mixed", "output log format: mixed or jsonl")
+	scanCmd.Flags().BoolVar(&scanOpts.jsonlOnly, "jsonl-only", false, "shortcut for --log-format jsonl")
 }
 
 func splitCSV(value string) []string {
@@ -199,4 +214,12 @@ func printBanner() {
 func printDisclaimer() {
 	fmt.Println("免责声明:           本软件仅用于经授权的安全测试，禁止使用本工具实施未授权测试。若违法使用导致任何法律责任，均由使用者自行承担，与软件作者无关。")
 	fmt.Println()
+}
+
+func normalizedLogFormat(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "mixed"
+	}
+	return value
 }

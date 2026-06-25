@@ -37,6 +37,7 @@ type Config struct {
 	Engines             string
 	TemplateDir         string
 	TempDir             string
+	LogFormat           string
 	RawArgs             []string
 	AcceptedCompatFlags map[string]any
 }
@@ -115,8 +116,24 @@ func (c Config) Parameters() map[string]any {
 		"poc-concurrency":     c.POCConcurrency,
 		"engines":             c.Engines,
 		"nuclei-template-dir": c.TemplateDir,
+		"log-format":          c.NormalizedLogFormat(),
 		"compat":              c.AcceptedCompatFlags,
 	}
+}
+
+func (c Config) NormalizedLogFormat() string {
+	switch strings.ToLower(strings.TrimSpace(c.LogFormat)) {
+	case "", "mixed":
+		return "mixed"
+	case "jsonl":
+		return "jsonl"
+	default:
+		return strings.ToLower(strings.TrimSpace(c.LogFormat))
+	}
+}
+
+func (c Config) JSONLOnly() bool {
+	return c.NormalizedLogFormat() == "jsonl"
 }
 
 func clamp(value, minValue, maxValue int) int {

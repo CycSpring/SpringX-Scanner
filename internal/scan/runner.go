@@ -216,6 +216,10 @@ func (r *Runner) Logf(format string, args ...any) {
 	r.mu.Lock()
 	r.logs = append(r.logs, line)
 	r.mu.Unlock()
+	if r.cfg.JSONLOnly() {
+		r.emitter.Emit("log", map[string]any{"message": line})
+		return
+	}
 	fmt.Fprintln(r.out, line)
 }
 

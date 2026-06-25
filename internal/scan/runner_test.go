@@ -1,6 +1,8 @@
 package scan
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -104,5 +106,59 @@ func TestRunnerMissingTemplateDirStillReportsSkippedPOC(t *testing.T) {
 	}
 	if _, err := report.WriteAll(result, workDir); err != nil {
 		t.Fatalf("WriteAll returned error: %v", err)
+	}
+}
+
+func TestRunnerJSONLOnlyEmitsLogsAsEvents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("<html><title>JSONL Smoke</title></html>"))
+	}))
+	defer server.Close()
+
+	var buf bytes.Buffer
+	emitter := event.NewEmitter(&buf)
+	cfg := Config{
+		Version:       "test",
+		TargetURL:     server.URL,
+		Ports:         "80",
+		NoPOC:         true,
+		GonmapTimeout: 1,
+		LogFormat:     "jsonl",
+	}
+	result, err := NewRunner(cfg, &buf, emitter).Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(result.Logs) == 0 {
+		t.Fatal("expected human logs to still be stored in result")
+	}
+
+	scanner := bufio.NewScanner(&buf)
+	var sawLog bool
+	var previousSeq uint64
+	for scanner.Scan() {
+		var ev event.Event
+		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			t.Fatalf("expected JSONL-only output, got %q: %v", scanner.Text(), err)
+		}
+		if ev.Version != event.ProtocolVersion {
+			t.Fatalf("unexpected event version: %q", ev.Version)
+		}
+		if ev.ScanID != result.Scan.ID {
+			t.Fatalf("event scan_id = %q, want %q", ev.ScanID, result.Scan.ID)
+		}
+		if ev.Seq <= previousSeq {
+			t.Fatalf("event seq did not increase: previous=%d current=%d", previousSeq, ev.Seq)
+		}
+		previousSeq = ev.Seq
+		if ev.Type == "log" {
+			sawLog = true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan output: %v", err)
+	}
+	if !sawLog {
+		t.Fatal("expected at least one log event")
 	}
 }
