@@ -274,6 +274,9 @@ func serviceEvent(svc model.Service) map[string]any {
 		"host": svc.Host, "ip": svc.IP, "port": svc.Port, "protocol": svc.Protocol,
 		"scheme": svc.Scheme, "url": svc.URL, "status_code": svc.StatusCode,
 		"title": svc.Title, "server": svc.Server, "tls": svc.TLS,
+		"content_type": svc.ContentType, "content_length": svc.ContentLength,
+		"location": svc.Location, "favicon_hash": svc.FaviconHash,
+		"technologies": svc.Technologies, "fingerprint_sources": svc.FingerprintSources,
 	}
 }
 

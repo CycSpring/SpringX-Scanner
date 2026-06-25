@@ -124,11 +124,11 @@ const htmlTemplate = `<!doctype html>
   <h2>存活服务</h2>
   {{if .Targets}}
   <table>
-    <thead><tr><th>#</th><th>主机</th><th>端口</th><th>协议</th><th>状态</th><th>标题</th><th>Server</th><th>URL</th></tr></thead>
+    <thead><tr><th>#</th><th>主机</th><th>端口</th><th>协议</th><th>状态</th><th>标题</th><th>Server</th><th>技术栈</th><th>内容类型</th><th>Favicon</th><th>URL</th></tr></thead>
     <tbody>
       {{range $i, $svc := .Targets}}
       <tr>
-        <td>{{$i}}</td><td>{{$svc.Host}}</td><td>{{$svc.Port}}</td><td>{{$svc.Protocol}}</td><td>{{$svc.StatusCode}}</td><td>{{$svc.Title}}</td><td>{{$svc.Server}}</td><td>{{if $svc.URL}}<a href="{{$svc.URL}}">{{$svc.URL}}</a>{{end}}</td>
+        <td>{{$i}}</td><td>{{$svc.Host}}</td><td>{{$svc.Port}}</td><td>{{$svc.Protocol}}</td><td>{{$svc.StatusCode}}</td><td>{{$svc.Title}}</td><td>{{$svc.Server}}</td><td>{{join $svc.Technologies}}</td><td>{{$svc.ContentType}}</td><td>{{$svc.FaviconHash}}</td><td>{{if $svc.URL}}<a href="{{$svc.URL}}">{{$svc.URL}}</a>{{end}}</td>
       </tr>
       {{end}}
     </tbody>

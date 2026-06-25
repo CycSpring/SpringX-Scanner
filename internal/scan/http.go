@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -51,12 +52,16 @@ func ProbeURL(ctx context.Context, rawURL string, timeout time.Duration, proxy s
 
 	svc.StatusCode = resp.StatusCode
 	svc.Server = resp.Header.Get("Server")
+	svc.ContentType = resp.Header.Get("Content-Type")
+	svc.ContentLength = resp.ContentLength
+	svc.Location = resp.Header.Get("Location")
 	if resp.TLS != nil {
 		svc.TLS = tlsSummary(resp.TLS)
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	svc.Title = extractTitle(string(body))
-	svc.Technologies = detectTechnologies(resp.Header, string(body))
+	svc.Technologies, svc.FingerprintSources = detectTechnologies(resp.Header, string(body))
+	svc.FaviconHash = faviconHash(ctx, normalized, timeout, proxy)
 	return svc
 }
 
@@ -127,21 +132,128 @@ func htmlUnescape(value string) string {
 	return replacer.Replace(value)
 }
 
-func detectTechnologies(header http.Header, body string) []string {
+func detectTechnologies(header http.Header, body string) ([]string, []string) {
 	var tech []string
+	var sources []string
 	server := strings.ToLower(header.Get("Server"))
 	powered := strings.ToLower(header.Get("X-Powered-By"))
+	generator := strings.ToLower(header.Get("X-Generator"))
+	cookie := strings.ToLower(strings.Join(header.Values("Set-Cookie"), ";"))
 	lowerBody := strings.ToLower(body)
-	for name, needle := range map[string]string{
-		"Nginx": "nginx", "Apache": "apache", "IIS": "microsoft-iis",
-		"PHP": "php", "ASP.NET": "asp.net", "Spring": "spring",
-		"Vue": "vue", "React": "react", "jQuery": "jquery",
-	} {
-		if strings.Contains(server, needle) || strings.Contains(powered, needle) || strings.Contains(lowerBody, needle) {
-			tech = append(tech, name)
-		}
+	rules := []struct {
+		name    string
+		needles []string
+		fields  map[string]string
+	}{
+		{"Nginx", []string{"nginx"}, map[string]string{"server": server}},
+		{"Apache", []string{"apache"}, map[string]string{"server": server}},
+		{"IIS", []string{"microsoft-iis", "iis"}, map[string]string{"server": server}},
+		{"OpenResty", []string{"openresty"}, map[string]string{"server": server, "body": lowerBody}},
+		{"Cloudflare", []string{"cloudflare", "__cf_bm", "cf-ray"}, map[string]string{"server": server, "cookie": cookie, "body": lowerBody}},
+		{"PHP", []string{"php", "phpsessid"}, map[string]string{"powered": powered, "cookie": cookie, "body": lowerBody}},
+		{"ASP.NET", []string{"asp.net", "aspxauth"}, map[string]string{"powered": powered, "cookie": cookie, "body": lowerBody}},
+		{"Java", []string{"jsessionid", "x-java"}, map[string]string{"cookie": cookie, "powered": powered}},
+		{"Spring", []string{"spring", "whitelabel error page"}, map[string]string{"body": lowerBody, "powered": powered}},
+		{"WordPress", []string{"wp-content", "wp-includes", "wordpress"}, map[string]string{"body": lowerBody, "generator": generator}},
+		{"Drupal", []string{"drupal", "x-drupal-cache"}, map[string]string{"body": lowerBody, "generator": generator}},
+		{"Joomla", []string{"joomla"}, map[string]string{"body": lowerBody, "generator": generator}},
+		{"ThinkPHP", []string{"thinkphp"}, map[string]string{"body": lowerBody, "powered": powered}},
+		{"Laravel", []string{"laravel", "xsrftoken", "xsrf-token"}, map[string]string{"body": lowerBody, "cookie": cookie}},
+		{"Vue", []string{"vue", "__vue__"}, map[string]string{"body": lowerBody}},
+		{"React", []string{"react", "__react", "data-reactroot"}, map[string]string{"body": lowerBody}},
+		{"Angular", []string{"ng-version", "angular"}, map[string]string{"body": lowerBody}},
+		{"jQuery", []string{"jquery"}, map[string]string{"body": lowerBody}},
+		{"Bootstrap", []string{"bootstrap"}, map[string]string{"body": lowerBody}},
 	}
-	return tech
+	for _, rule := range rules {
+		for source, haystack := range rule.fields {
+			if haystack == "" {
+				continue
+			}
+			for _, needle := range rule.needles {
+				if strings.Contains(haystack, needle) {
+					tech = appendUnique(tech, rule.name)
+					sources = appendUnique(sources, rule.name+":"+source)
+					goto nextRule
+				}
+			}
+		}
+	nextRule:
+	}
+	return tech, sources
+}
+
+func faviconHash(ctx context.Context, rawURL string, timeout time.Duration, proxy string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	u.Path = "/favicon.ico"
+	u.RawQuery = ""
+	u.Fragment = ""
+	client := httpClient(timeout, proxy)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("User-Agent", "SpringX-Scanner/0.1")
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if err != nil || len(body) == 0 {
+		return ""
+	}
+	encoded := base64.StdEncoding.EncodeToString(body)
+	return fmt.Sprintf("%d", murmur3([]byte(encoded), 0))
+}
+
+func murmur3(data []byte, seed uint32) int32 {
+	const c1 uint32 = 0xcc9e2d51
+	const c2 uint32 = 0x1b873593
+	h1 := seed
+	nblocks := len(data) / 4
+	for i := 0; i < nblocks; i++ {
+		k1 := uint32(data[i*4]) | uint32(data[i*4+1])<<8 | uint32(data[i*4+2])<<16 | uint32(data[i*4+3])<<24
+		k1 *= c1
+		k1 = bitsRotateLeft32(k1, 15)
+		k1 *= c2
+		h1 ^= k1
+		h1 = bitsRotateLeft32(h1, 13)
+		h1 = h1*5 + 0xe6546b64
+	}
+	tail := data[nblocks*4:]
+	var k1 uint32
+	switch len(tail) {
+	case 3:
+		k1 ^= uint32(tail[2]) << 16
+		fallthrough
+	case 2:
+		k1 ^= uint32(tail[1]) << 8
+		fallthrough
+	case 1:
+		k1 ^= uint32(tail[0])
+		k1 *= c1
+		k1 = bitsRotateLeft32(k1, 15)
+		k1 *= c2
+		h1 ^= k1
+	}
+	h1 ^= uint32(len(data))
+	h1 ^= h1 >> 16
+	h1 *= 0x85ebca6b
+	h1 ^= h1 >> 13
+	h1 *= 0xc2b2ae35
+	h1 ^= h1 >> 16
+	return int32(h1)
+}
+
+func bitsRotateLeft32(x uint32, k int) uint32 {
+	return (x << k) | (x >> (32 - k))
 }
 
 func portFromURL(u *url.URL) int {

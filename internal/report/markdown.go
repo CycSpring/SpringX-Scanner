@@ -48,12 +48,13 @@ func RenderMarkdown(result *model.Result) string {
 	if len(result.Targets) == 0 {
 		fmt.Fprintf(&b, "未发现存活服务。\n")
 	} else {
-		fmt.Fprintf(&b, "| # | 主机 | 端口 | 协议 | 状态 | 标题 | Server | URL |\n")
-		fmt.Fprintf(&b, "|---:|---|---:|---|---:|---|---|---|\n")
+		fmt.Fprintf(&b, "| # | 主机 | 端口 | 协议 | 状态 | 标题 | Server | 技术栈 | 内容类型 | Favicon | URL |\n")
+		fmt.Fprintf(&b, "|---:|---|---:|---|---:|---|---|---|---|---|---|\n")
 		for i, svc := range result.Targets {
-			fmt.Fprintf(&b, "| %d | %s | %d | %s | %d | %s | %s | %s |\n",
+			fmt.Fprintf(&b, "| %d | %s | %d | %s | %d | %s | %s | %s | %s | %s | %s |\n",
 				i+1, md(svc.Host), svc.Port, md(firstNonEmpty(svc.Protocol, svc.Scheme, svc.Service)),
-				svc.StatusCode, md(svc.Title), md(svc.Server), md(svc.URL))
+				svc.StatusCode, md(svc.Title), md(svc.Server), md(strings.Join(svc.Technologies, ",")),
+				md(svc.ContentType), md(svc.FaviconHash), md(svc.URL))
 		}
 	}
 

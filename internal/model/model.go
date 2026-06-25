@@ -50,20 +50,25 @@ type ReportPaths struct {
 }
 
 type Service struct {
-	Host         string   `json:"host"`
-	IP           string   `json:"ip,omitempty"`
-	Port         int      `json:"port"`
-	Protocol     string   `json:"protocol"`
-	Scheme       string   `json:"scheme,omitempty"`
-	URL          string   `json:"url,omitempty"`
-	Service      string   `json:"service,omitempty"`
-	StatusCode   int      `json:"status_code,omitempty"`
-	Title        string   `json:"title,omitempty"`
-	Server       string   `json:"server,omitempty"`
-	TLS          string   `json:"tls,omitempty"`
-	Technologies []string `json:"technologies,omitempty"`
-	Banner       string   `json:"banner,omitempty"`
-	Error        string   `json:"error,omitempty"`
+	Host               string   `json:"host"`
+	IP                 string   `json:"ip,omitempty"`
+	Port               int      `json:"port"`
+	Protocol           string   `json:"protocol"`
+	Scheme             string   `json:"scheme,omitempty"`
+	URL                string   `json:"url,omitempty"`
+	Service            string   `json:"service,omitempty"`
+	StatusCode         int      `json:"status_code,omitempty"`
+	Title              string   `json:"title,omitempty"`
+	Server             string   `json:"server,omitempty"`
+	TLS                string   `json:"tls,omitempty"`
+	ContentType        string   `json:"content_type,omitempty"`
+	ContentLength      int64    `json:"content_length,omitempty"`
+	Location           string   `json:"location,omitempty"`
+	FaviconHash        string   `json:"favicon_hash,omitempty"`
+	Technologies       []string `json:"technologies,omitempty"`
+	FingerprintSources []string `json:"fingerprint_sources,omitempty"`
+	Banner             string   `json:"banner,omitempty"`
+	Error              string   `json:"error,omitempty"`
 }
 
 type Vulnerability struct {
