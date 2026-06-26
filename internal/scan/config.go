@@ -2,6 +2,7 @@ package scan
 
 import (
 	"math"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -116,6 +117,7 @@ func (c Config) Parameters() map[string]any {
 		"poc-concurrency":     c.POCConcurrency,
 		"engines":             c.Engines,
 		"nuclei-template-dir": c.TemplateDir,
+		"temp-dir":            c.GetTempDir(),
 		"log-format":          c.NormalizedLogFormat(),
 		"compat":              c.AcceptedCompatFlags,
 	}
@@ -134,6 +136,22 @@ func (c Config) NormalizedLogFormat() string {
 
 func (c Config) JSONLOnly() bool {
 	return c.NormalizedLogFormat() == "jsonl"
+}
+
+func (c Config) GetTempDir() string {
+	if c.TempDir != "" {
+		return c.TempDir
+	}
+	// Respect SPRINGX_TEMP_DIR environment variable first.
+	if td := os.Getenv("SPRINGX_TEMP_DIR"); td != "" {
+		return td
+	}
+	// Windows defaults to D:\Temp (user preference for C: drive space).
+	if runtime.GOOS == "windows" {
+		return "D:\\Temp"
+	}
+	// Otherwise use OS default temp dir.
+	return os.TempDir()
 }
 
 func clamp(value, minValue, maxValue int) int {

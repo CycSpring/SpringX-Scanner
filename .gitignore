@@ -3,6 +3,6 @@
 /dist/
 /reports/
 /tmp/
+/.reasonix/
 /*.exe
 *.log
-

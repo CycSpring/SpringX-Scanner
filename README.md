@@ -26,6 +26,15 @@ $env:GOTOOLCHAIN='auto'
 go build -o dist\springx.exe .
 ```
 
+Or use the pinned Windows build script:
+
+```powershell
+.\build.ps1
+.\build.ps1 -Version v0.2.0
+```
+
+The script runs `go test ./...` before building, writes Go caches under `D:\Temp`, and injects version/build time into `springx.exe --version`.
+
 ## Smoke Tests
 
 ```powershell
@@ -37,3 +46,9 @@ go build -o dist\springx.exe .
 ```
 
 By default, Nuclei templates are loaded from `pocs\nuclei` under the process working directory. If the directory is missing, scanning still completes and the reports explicitly show that POC execution was skipped.
+
+## Compatibility Flags
+
+`--web` and `--no-browser` are accepted for WebUI compatibility. The CLI core does not open a browser by itself; use `--jsonl-only` or `--log-format jsonl` when a caller needs machine-readable stdout.
+
+Temporary files default to `SPRINGX_TEMP_DIR`, then `D:\Temp` on Windows, then the OS temp directory on other systems. Override with `--temp-dir D:\Temp\springx-run` when needed.

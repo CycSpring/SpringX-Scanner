@@ -47,6 +47,7 @@ type scanOptions struct {
 	nucleiSeverity    string
 	nucleiIDs         string
 	nucleiTemplateDir string
+	tempDir           string
 	xrayPOCName       string
 	pocConcurrency    int
 	engines           string
@@ -114,7 +115,7 @@ var scanCmd = &cobra.Command{
 			POCConcurrency: scanOpts.pocConcurrency,
 			Engines:        scanOpts.engines,
 			TemplateDir:    templateDir,
-			TempDir:        `D:\Temp`,
+			TempDir:        scanOpts.tempDir,
 			LogFormat:      logFormat,
 			RawArgs:        os.Args[1:],
 			AcceptedCompatFlags: map[string]any{
@@ -187,6 +188,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanOpts.engines, "engines", "", "compatibility engine selector")
 	scanCmd.Flags().StringVar(&scanOpts.logFormat, "log-format", "mixed", "output log format: mixed or jsonl")
 	scanCmd.Flags().BoolVar(&scanOpts.jsonlOnly, "jsonl-only", false, "shortcut for --log-format jsonl")
+	scanCmd.Flags().StringVar(&scanOpts.tempDir, "temp-dir", "", "temporary directory for Nuclei (default: SPRINGX_TEMP_DIR or D:\\Temp on Windows)")
 }
 
 func splitCSV(value string) []string {

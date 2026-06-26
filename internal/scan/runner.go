@@ -154,7 +154,7 @@ func (r *Runner) runPOC(ctx context.Context, result *model.Result) error {
 		Concurrency: r.cfg.PocConcurrency(),
 		Timeout:     int(r.cfg.Timeout().Seconds()),
 		Proxy:       r.cfg.Proxy,
-		TempDir:     r.cfg.TempDir,
+		TempDir:     r.cfg.GetTempDir(),
 		Logger:      r.Logf,
 		OnFinding: func(v model.Vulnerability) {
 			r.Logf("[INF] [NucleiPOC] %s - [%s] %s", v.Target, severityLabel(v.Severity), v.TemplateID)
