@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SpringX Scanner</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>SpringX Scanner</h1>
+    <span class="sub" id="versionLine"></span>
+  </header>
+
+  <nav class="tabs">
+    <div class="tab active" data-tab="scan">扫描</div>
+    <div class="tab" data-tab="reports">历史报告</div>
+  </nav>
+
+  <!-- 扫描 tab -->
+  <section id="tab-scan">
+    <div class="grid2">
+      <div class="panel">
+        <h2 style="margin-top:0">发起扫描</h2>
+        <form id="scanForm">
+          <div class="form-grid">
+            <div class="full"><label>目标 URL（-u）</label><input id="f-url" placeholder="https://example.com"></div>
+            <div class="full"><label>IP/主机/CIDR（-i）</label><input id="f-ip" placeholder="127.0.0.1, 10.0.0.0/24"></div>
+            <div><label>URL 文件（--urlfile）</label><input id="f-urlfile"></div>
+            <div><label>IP 文件（--ipfile）</label><input id="f-ipfile"></div>
+            <div><label>端口（-p）</label><input id="f-ports" value="TOP100"></div>
+            <div><label>线程（-t）</label><input id="f-threads" type="number" value="5" min="1"></div>
+            <div><label>超时分钟（--done）</label><input id="f-done" type="number" value="10" min="1"></div>
+            <div><label>代理（-x）</label><input id="f-proxy" placeholder="http://127.0.0.1:8080"></div>
+            <div><label>Nuclei Tags（--nuclei-tags）</label><input id="f-nuclei-tags"></div>
+            <div><label>Nuclei Severity（--nuclei-severity）</label><input id="f-nuclei-severity" placeholder="critical,high"></div>
+            <div><label>Nuclei IDs（--nuclei-ids）</label><input id="f-nuclei-ids"></div>
+            <div><label>Nuclei 模板目录（--nuclei-template-dir）</label><input id="f-nuclei-template-dir"></div>
+            <div><label>POC 并发（--poc-concurrency）</label><input id="f-poc-concurrency" type="number" value="5" min="1"></div>
+            <div><label>TCP 超时秒（--gonmap-timeout）</label><input id="f-gonmap-timeout" type="number" value="5" min="1"></div>
+            <div><label>临时目录（--temp-dir）</label><input id="f-temp-dir"></div>
+            <div class="full" style="display:flex;align-items:center;gap:8px;margin-top:4px">
+              <input type="checkbox" id="f-nopoc"> <label style="margin:0" for="f-nopoc">禁用 POC（--nopoc）</label>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="submit" id="startBtn">开始扫描</button>
+            <button type="button" id="cancelBtn" class="danger hidden">取消扫描</button>
+            <span class="muted" id="jobInfo"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h2 style="margin-top:0">扫描状态</h2>
+        <div class="summary" id="metrics">
+          <div class="metric"><span>状态</span><strong id="m-status">—</strong></div>
+          <div class="metric"><span>引擎 scan_id</span><strong id="m-scanid" style="font-size:13px">—</strong></div>
+          <div class="metric"><span>存活服务</span><strong id="m-services">0</strong></div>
+          <div class="metric"><span>POC 发现</span><strong id="m-vulns">0</strong></div>
+        </div>
+        <h3>服务（实时）</h3>
+        <table id="svcTable" class="hidden">
+          <thead><tr><th>主机</th><th>端口</th><th>状态</th><th>标题</th><th>Server</th><th>技术栈</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="muted" id="svcEmpty">尚未发现服务。</p>
+        <h3>漏洞（实时）</h3>
+        <table id="vulnTable" class="hidden">
+          <thead><tr><th>严重级别</th><th>模板</th><th>目标</th><th>匹配</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="muted" id="vulnEmpty">尚未发现漏洞。</p>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:24px">
+      <h2 style="margin-top:0">事件流</h2>
+      <div class="log" id="eventLog"><div class="line muted">等待扫描启动…</div></div>
+    </div>
+  </section>
+
+  <!-- 历史报告 tab -->
+  <section id="tab-reports" class="hidden">
+    <div class="panel">
+      <h2 style="margin-top:0">历史报告</h2>
+      <p class="muted">扫描完成后 JSON 报告写入 <code>reports/data/</code>。点击查看详情。</p>
+      <table id="reportsTable" class="hidden">
+        <thead><tr><th>报告</th><th>scan_id</th><th>开始时间</th><th>状态</th><th>服务</th><th>漏洞</th><th>大小</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="muted" id="reportsEmpty">暂无报告。</p>
+    </div>
+    <div class="panel hidden" id="reportDetail" style="margin-top:24px">
+      <h2 style="margin-top:0" id="rd-title">报告详情</h2>
+      <button class="secondary" id="rd-back">← 返回列表</button>
+      <div class="summary" id="rd-metrics"></div>
+      <h3>存活服务</h3>
+      <div id="rd-services"></div>
+      <h3>漏洞</h3>
+      <div id="rd-vulns"></div>
+    </div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

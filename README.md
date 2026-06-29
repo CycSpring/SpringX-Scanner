@@ -47,8 +47,20 @@ The script runs `go test ./...` before building, writes Go caches under `D:\Temp
 
 By default, Nuclei templates are loaded from `pocs\nuclei` under the process working directory. If the directory is missing, scanning still completes and the reports explicitly show that POC execution was skipped.
 
+## WebUI
+
+`springx web` runs a long-running HTTP server that drives `springx scan --jsonl-only` child processes and streams their JSONL events to the browser over Server-Sent Events. The scanner core is unchanged; the WebUI consumes the `springx.events.v1` protocol.
+
+```powershell
+.\dist\springx.exe web
+# custom address / work directory
+.\dist\springx.exe web --addr 127.0.0.1 --port 8849 --work-dir .
+```
+
+Then open <http://127.0.0.1:8849>. The WebUI provides: a scan form (functional flags only), real-time progress via SSE, live service/vulnerability tables, a history of reports under `reports/data/`, and scan cancellation. See [docs/webui.md](docs/webui.md) for the full HTTP API and design notes.
+
 ## Compatibility Flags
 
-`--web` and `--no-browser` are accepted for WebUI compatibility. The CLI core does not open a browser by itself; use `--jsonl-only` or `--log-format jsonl` when a caller needs machine-readable stdout.
+`--web` and `--no-browser` are accepted for WebUI compatibility. The CLI core does not open a browser by itself; the `springx web` server sets them when it spawns scan child processes to mark their WebUI origin. Use `--jsonl-only` or `--log-format jsonl` when a caller needs machine-readable stdout.
 
 Temporary files default to `SPRINGX_TEMP_DIR`, then `D:\Temp` on Windows, then the OS temp directory on other systems. Override with `--temp-dir D:\Temp\springx-run` when needed.
