@@ -69,7 +69,10 @@ Data:
 
 ### `service_detected`
 
-Emitted after an HTTP/HTTPS service is identified.
+Emitted after an HTTP/HTTPS service is identified. A probe that fails is also
+emitted as `service_detected` with `status_code: 0` and an `error` field, so the
+WebUI shows unreachable targets in real time rather than only in the log; the
+`error` field is omitted on success.
 
 Data includes:
 
@@ -90,9 +93,12 @@ Data includes:
   "location": "",
   "favicon_hash": "123456789",
   "technologies": ["Nginx"],
-  "fingerprint_sources": ["server:nginx"]
+  "fingerprint_sources": ["server:nginx"],
+  "error": "dial tcp ...: i/o timeout"
 }
 ```
+
+`error` is present only on a failed probe.
 
 ### `port_open`
 

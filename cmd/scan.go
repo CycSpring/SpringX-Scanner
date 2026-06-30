@@ -50,6 +50,8 @@ type scanOptions struct {
 	tempDir           string
 	xrayPOCName       string
 	pocConcurrency    int
+	httpConcurrency   int
+	httpTimeout       int
 	engines           string
 	logFormat         string
 	jsonlOnly         bool
@@ -88,36 +90,38 @@ var scanCmd = &cobra.Command{
 		}
 
 		cfg := scan.Config{
-			Version:        appVersion,
-			WorkDir:        wd,
-			TargetURL:      scanOpts.targetURL,
-			TargetIP:       scanOpts.targetIP,
-			URLFile:        scanOpts.urlFile,
-			IPFile:         scanOpts.ipFile,
-			Cyber:          scanOpts.cyber,
-			Spy:            scanOpts.spy,
-			Ports:          scanOpts.ports,
-			Proxy:          scanOpts.proxy,
-			OutName:        scanOpts.outName,
-			Web:            scanOpts.web,
-			NoBrowser:      scanOpts.noBrowser,
-			NoPing:         scanOpts.noPing,
-			NoPOC:          scanOpts.noPOC,
-			Threads:        scanOpts.threads,
-			DoneMinutes:    scanOpts.doneMinutes,
-			ChanRatio:      scanOpts.chanRatio,
-			Platform:       scanOpts.platform,
-			Size:           scanOpts.size,
-			GonmapTimeout:  scanOpts.gonmapTimeout,
-			NucleiTags:     splitCSV(scanOpts.nucleiTags),
-			NucleiSeverity: scanOpts.nucleiSeverity,
-			NucleiIDs:      splitCSV(scanOpts.nucleiIDs),
-			POCConcurrency: scanOpts.pocConcurrency,
-			Engines:        scanOpts.engines,
-			TemplateDir:    templateDir,
-			TempDir:        scanOpts.tempDir,
-			LogFormat:      logFormat,
-			RawArgs:        os.Args[1:],
+			Version:         appVersion,
+			WorkDir:         wd,
+			TargetURL:       scanOpts.targetURL,
+			TargetIP:        scanOpts.targetIP,
+			URLFile:         scanOpts.urlFile,
+			IPFile:          scanOpts.ipFile,
+			Cyber:           scanOpts.cyber,
+			Spy:             scanOpts.spy,
+			Ports:           scanOpts.ports,
+			Proxy:           scanOpts.proxy,
+			OutName:         scanOpts.outName,
+			Web:             scanOpts.web,
+			NoBrowser:       scanOpts.noBrowser,
+			NoPing:          scanOpts.noPing,
+			NoPOC:           scanOpts.noPOC,
+			Threads:         scanOpts.threads,
+			DoneMinutes:     scanOpts.doneMinutes,
+			ChanRatio:       scanOpts.chanRatio,
+			Platform:        scanOpts.platform,
+			Size:            scanOpts.size,
+			GonmapTimeout:   scanOpts.gonmapTimeout,
+			NucleiTags:      splitCSV(scanOpts.nucleiTags),
+			NucleiSeverity:  scanOpts.nucleiSeverity,
+			NucleiIDs:       splitCSV(scanOpts.nucleiIDs),
+			POCConcurrency:  scanOpts.pocConcurrency,
+			HTTPConcurrency: scanOpts.httpConcurrency,
+			HTTPTimeoutSec:  scanOpts.httpTimeout,
+			Engines:         scanOpts.engines,
+			TemplateDir:     templateDir,
+			TempDir:         scanOpts.tempDir,
+			LogFormat:       logFormat,
+			RawArgs:         os.Args[1:],
 			AcceptedCompatFlags: map[string]any{
 				"dbs": scanOpts.dbs, "risk": scanOpts.risk, "deep-scan": scanOpts.deepScan,
 				"nocrack": scanOpts.noCrack, "noimg": scanOpts.noImg, "random": scanOpts.random,
@@ -185,6 +189,8 @@ func init() {
 	scanCmd.Flags().StringVar(&scanOpts.nucleiTemplateDir, "nuclei-template-dir", "", "override nuclei template directory")
 	scanCmd.Flags().StringVar(&scanOpts.xrayPOCName, "xray-poc-name", "", "compatibility flag, accepted but not implemented in MVP")
 	scanCmd.Flags().IntVar(&scanOpts.pocConcurrency, "poc-concurrency", 5, "POC scanning concurrency")
+	scanCmd.Flags().IntVar(&scanOpts.httpConcurrency, "http-concurrency", 10, "HTTP probe concurrency")
+	scanCmd.Flags().IntVar(&scanOpts.httpTimeout, "http-timeout", 10, "HTTP request timeout in seconds")
 	scanCmd.Flags().StringVar(&scanOpts.engines, "engines", "", "compatibility engine selector")
 	scanCmd.Flags().StringVar(&scanOpts.logFormat, "log-format", "mixed", "output log format: mixed or jsonl")
 	scanCmd.Flags().BoolVar(&scanOpts.jsonlOnly, "jsonl-only", false, "shortcut for --log-format jsonl")

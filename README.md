@@ -47,6 +47,19 @@ The script runs `go test ./...` before building, writes Go caches under `D:\Temp
 
 By default, Nuclei templates are loaded from `pocs\nuclei` under the process working directory. If the directory is missing, scanning still completes and the reports explicitly show that POC execution was skipped.
 
+## Scan Tuning
+
+HTTP probing runs concurrently over a shared keep-alive client. Use these flags to tune real-network behavior:
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--http-concurrency` | `10` | HTTP probe worker count (clamped to 1–100). Raise for many `--urlfile` targets. |
+| `--http-timeout` | `10` | Per-request HTTP timeout in seconds (header + body + redirects). Separate from the TCP dial timeout. |
+| `--gonmap-timeout` | `5` | TCP connect timeout in seconds (port scanning / `isPortOpen`). |
+| `-t/--threads` | `5` | Drives TCP port-scan concurrency (`threads×20`, clamped 5–500). |
+
+Probe resilience: a transient HTTP network error (timeout, connection refused, EOF) is retried once; failed probes still emit `service_detected` with `status_code: 0` and an `error` field and appear in the report so unreachable targets are visible rather than silently dropped. Failed probes are not fed to Nuclei.
+
 ## WebUI
 
 `springx web` runs a long-running HTTP server that drives `springx scan --jsonl-only` child processes and streams their JSONL events to the browser over Server-Sent Events. The scanner core is unchanged; the WebUI consumes the `springx.events.v1` protocol.

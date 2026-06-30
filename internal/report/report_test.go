@@ -65,7 +65,7 @@ func TestRenderHTMLStructureAndCounts(t *testing.T) {
 	for _, want := range []string{
 		"<h1>SpringX 扫描报告</h1>",
 		"<h2>POC 状态</h2>",
-		"<h2>存活服务</h2>",
+		"<h2>服务探测结果</h2>",
 		"<h2>POC 发现</h2>",
 		"<h2>参数摘要</h2>",
 		"springx-one",
@@ -92,9 +92,9 @@ func TestRenderMarkdownStructureAndCounts(t *testing.T) {
 	for _, want := range []string{
 		"# SpringX 扫描报告",
 		"## 扫描概览",
-		"## 存活服务",
+		"## 服务探测结果",
 		"## POC 发现",
-		"| # | 主机 | 端口 | 协议 | 状态 | 标题 | Server | 技术栈 | 内容类型 | Favicon | URL |",
+		"| # | 主机 | 端口 | 协议 | 状态 | 标题 | Server | 技术栈 | 内容类型 | Favicon | URL | 错误 |",
 		"| # | 严重级别 | 模板 | 名称 | 目标 | 匹配 |",
 		"- `web`: `true`",
 		"- `no-browser`: `true`",

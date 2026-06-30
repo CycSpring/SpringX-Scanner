@@ -3,6 +3,7 @@ package scan
 import (
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestConfigParametersIncludeCompatibilityAndTempDir(t *testing.T) {
@@ -62,5 +63,36 @@ func TestConfigGetTempDirWindowsDefaultOrOSFallback(t *testing.T) {
 		if got != `D:\Temp` {
 			t.Fatalf("windows default temp dir = %s, want D:\\Temp", got)
 		}
+	}
+}
+
+func TestHttpConcurrency(t *testing.T) {
+	cases := []struct {
+		in, want int
+	}{
+		{0, 10},    // default
+		{-1, 10},   // negative -> default
+		{1, 1},     // minimum
+		{50, 50},   // mid range
+		{100, 100}, // maximum
+		{101, 100}, // clamp high
+		{500, 100}, // clamp high
+	}
+	for _, c := range cases {
+		if got := (Config{HTTPConcurrency: c.in}).HttpConcurrency(); got != c.want {
+			t.Fatalf("HttpConcurrency(%d) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+func TestHTTPTimeout(t *testing.T) {
+	if got := (Config{}).HTTPTimeout(); got != 10*time.Second {
+		t.Fatalf("default HTTPTimeout = %v, want 10s", got)
+	}
+	if got := (Config{HTTPTimeoutSec: 20}).HTTPTimeout(); got != 20*time.Second {
+		t.Fatalf("HTTPTimeout(20) = %v, want 20s", got)
+	}
+	if got := (Config{HTTPTimeoutSec: -1}).HTTPTimeout(); got != 10*time.Second {
+		t.Fatalf("negative HTTPTimeout = %v, want 10s default", got)
 	}
 }

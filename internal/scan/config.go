@@ -35,6 +35,8 @@ type Config struct {
 	NucleiSeverity      string
 	NucleiIDs           []string
 	POCConcurrency      int
+	HTTPConcurrency     int
+	HTTPTimeoutSec      int
 	Engines             string
 	TemplateDir         string
 	TempDir             string
@@ -44,9 +46,22 @@ type Config struct {
 }
 
 func (c Config) Timeout() time.Duration {
+	// TCP connect timeout. Despite the GonmapTimeout field name (kept for
+	// compatibility), this value feeds the TCP dialer used by port scanning.
 	seconds := c.GonmapTimeout
 	if seconds <= 0 {
 		seconds = 5
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// HTTPTimeout returns the per-request timeout for HTTP probing. It is separate
+// from the TCP dial timeout because an HTTP request (header + body + redirects)
+// typically needs longer than a TCP connect. Defaults to 10s.
+func (c Config) HTTPTimeout() time.Duration {
+	seconds := c.HTTPTimeoutSec
+	if seconds <= 0 {
+		seconds = 10
 	}
 	return time.Duration(seconds) * time.Second
 }
@@ -85,6 +100,16 @@ func (c Config) PocConcurrency() int {
 	return 5
 }
 
+// HTTPConcurrency returns the HTTP probe worker count. Defaults to 10, clamped
+// to [1, 100]. Independent from the TCP port-scan concurrency (PortConcurrency)
+// and the POC concurrency (PocConcurrency).
+func (c Config) HttpConcurrency() int {
+	if c.HTTPConcurrency > 0 {
+		return clamp(c.HTTPConcurrency, 1, 100)
+	}
+	return 10
+}
+
 func (c Config) TargetLimit() int {
 	if c.Size <= 0 {
 		return 100
@@ -115,6 +140,8 @@ func (c Config) Parameters() map[string]any {
 		"nuclei-severity":     c.NucleiSeverity,
 		"nuclei-ids":          c.NucleiIDs,
 		"poc-concurrency":     c.POCConcurrency,
+		"http-concurrency":    c.HTTPConcurrency,
+		"http-timeout":        c.HTTPTimeoutSec,
 		"engines":             c.Engines,
 		"nuclei-template-dir": c.TemplateDir,
 		"temp-dir":            c.GetTempDir(),

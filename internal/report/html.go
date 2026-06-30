@@ -121,19 +121,19 @@ const htmlTemplate = `<!doctype html>
   {{end}}
   {{if .Scan.Errors}}<p class="muted">错误：{{join .Scan.Errors}}</p>{{end}}
 
-  <h2>存活服务</h2>
+  <h2>服务探测结果</h2>
   {{if .Targets}}
   <table>
-    <thead><tr><th>#</th><th>主机</th><th>端口</th><th>协议</th><th>状态</th><th>标题</th><th>Server</th><th>技术栈</th><th>内容类型</th><th>Favicon</th><th>URL</th></tr></thead>
+    <thead><tr><th>#</th><th>主机</th><th>端口</th><th>协议</th><th>状态</th><th>标题</th><th>Server</th><th>技术栈</th><th>内容类型</th><th>Favicon</th><th>URL</th><th>错误</th></tr></thead>
     <tbody>
       {{range $i, $svc := .Targets}}
       <tr>
-        <td>{{$i}}</td><td>{{$svc.Host}}</td><td>{{$svc.Port}}</td><td>{{$svc.Protocol}}</td><td>{{$svc.StatusCode}}</td><td>{{$svc.Title}}</td><td>{{$svc.Server}}</td><td>{{join $svc.Technologies}}</td><td>{{$svc.ContentType}}</td><td>{{$svc.FaviconHash}}</td><td>{{if $svc.URL}}<a href="{{$svc.URL}}">{{$svc.URL}}</a>{{end}}</td>
+        <td>{{$i}}</td><td>{{$svc.Host}}</td><td>{{$svc.Port}}</td><td>{{$svc.Protocol}}</td><td>{{$svc.StatusCode}}</td><td>{{$svc.Title}}</td><td>{{$svc.Server}}</td><td>{{join $svc.Technologies}}</td><td>{{$svc.ContentType}}</td><td>{{$svc.FaviconHash}}</td><td>{{if $svc.URL}}<a href="{{$svc.URL}}">{{$svc.URL}}</a>{{end}}</td><td>{{if $svc.Error}}<span class="severity-high">{{$svc.Error}}</span>{{end}}</td>
       </tr>
       {{end}}
     </tbody>
   </table>
-  {{else}}<p class="muted">未发现存活服务。</p>{{end}}
+  {{else}}<p class="muted">未发现服务探测结果。</p>{{end}}
 
   <h2>POC 发现</h2>
   {{if .Vulnerabilities}}

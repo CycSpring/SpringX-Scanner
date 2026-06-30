@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +12,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/CycSpring/SpringX-Scanner/internal/model"
@@ -18,10 +21,26 @@ import (
 
 var titleRE = regexp.MustCompile(`(?is)<title[^>]*>\s*(.*?)\s*</title>`)
 
+// retryBackoff is the pause before a retryable HTTP error is retried. It is a
+// package-level variable so tests can shorten it and avoid sleeping 500ms.
+var retryBackoff = 500 * time.Millisecond
+
+// ProbeURL probes a single URL with a fresh client. It is kept for backward
+// compatibility (e.g. http_test.go); the concurrent path uses probeURLs with a
+// shared client via probeURLWithClient.
 func ProbeURL(ctx context.Context, rawURL string, timeout time.Duration, proxy string) model.Service {
+	return probeURLWithClient(ctx, httpClient(timeout, proxy), rawURL)
+}
+
+// probeURLWithClient probes a single URL using the given (shared) client. On a
+// retryable network error (timeout, refused, EOF) it retries once after
+// retryBackoff. A 4xx/5xx response is NOT an error — it returns the status.
+// NormalizeURL failure now produces a structurally complete Service.
+func probeURLWithClient(ctx context.Context, client *http.Client, rawURL string) model.Service {
 	normalized, err := NormalizeURL(rawURL)
 	if err != nil {
-		return model.Service{Host: rawURL, Error: err.Error()}
+		// B.5: complete the struct so failed probes still render as a full row.
+		return model.Service{Host: rawURL, Protocol: "http", URL: rawURL, Service: "WEB应用", Error: err.Error()}
 	}
 	u, _ := url.Parse(normalized)
 	svc := model.Service{
@@ -36,14 +55,22 @@ func ProbeURL(ctx context.Context, rawURL string, timeout time.Duration, proxy s
 		svc.IP = ip.String()
 	}
 
-	client := httpClient(timeout, proxy)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, normalized, nil)
-	if err != nil {
-		svc.Error = err.Error()
-		return svc
+	do := func() (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, normalized, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", "SpringX-Scanner/0.1")
+		return client.Do(req)
 	}
-	req.Header.Set("User-Agent", "SpringX-Scanner/0.1")
-	resp, err := client.Do(req)
+	resp, err := do()
+	if err != nil && isRetryableNetError(ctx, err) {
+		select {
+		case <-time.After(retryBackoff):
+		case <-ctx.Done():
+		}
+		resp, err = do()
+	}
 	if err != nil {
 		svc.Error = err.Error()
 		return svc
@@ -53,7 +80,9 @@ func ProbeURL(ctx context.Context, rawURL string, timeout time.Duration, proxy s
 	svc.StatusCode = resp.StatusCode
 	svc.Server = resp.Header.Get("Server")
 	svc.ContentType = resp.Header.Get("Content-Type")
-	svc.ContentLength = resp.ContentLength
+	if resp.ContentLength > 0 {
+		svc.ContentLength = resp.ContentLength
+	}
 	svc.Location = resp.Header.Get("Location")
 	if resp.TLS != nil {
 		svc.TLS = tlsSummary(resp.TLS)
@@ -61,8 +90,91 @@ func ProbeURL(ctx context.Context, rawURL string, timeout time.Duration, proxy s
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	svc.Title = extractTitle(string(body))
 	svc.Technologies, svc.FingerprintSources = detectTechnologies(resp.Header, string(body))
-	svc.FaviconHash = faviconHash(ctx, normalized, timeout, proxy)
+	svc.FaviconHash = faviconHash(ctx, client, normalized)
 	return svc
+}
+
+// isRetryableNetError reports whether err is a transient network failure worth
+// one retry. User cancellation (context.Canceled) is never retried.
+func isRetryableNetError(ctx context.Context, err error) bool {
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) {
+		return true
+	}
+	return false
+}
+
+// probeURLs probes a list of URLs concurrently, mirroring the tcp.go ScanPorts
+// worker-pool pattern. onResult is invoked from worker goroutines (Emitter and
+// Logf are mutex-safe). It does NOT emit target_discovered — the caller does
+// that before invoking, so the "discovered" semantic is preserved.
+func probeURLs(ctx context.Context, urls []string, concurrency int, client *http.Client, onResult func(model.Service)) []model.Service {
+	jobs := make(chan string)
+	results := make(chan model.Service)
+	var wg sync.WaitGroup
+
+	workerCount := concurrency
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for rawURL := range jobs {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				svc := probeURLWithClient(ctx, client, rawURL)
+				select {
+				case results <- svc:
+				case <-ctx.Done():
+					return
+				}
+				if onResult != nil {
+					onResult(svc)
+				}
+			}
+		}()
+	}
+
+	// Producer: honor ctx cancellation, then close jobs so workers exit.
+	go func() {
+		defer close(jobs)
+		for _, u := range urls {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- u:
+			}
+		}
+	}()
+
+	// Closer: once all workers are done, close results so the drain loop exits.
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var services []model.Service
+	for svc := range results {
+		services = append(services, svc)
+	}
+	return services
 }
 
 func ProbeHTTPService(ctx context.Context, host string, port int, timeout time.Duration, proxy string) model.Service {
@@ -70,13 +182,14 @@ func ProbeHTTPService(ctx context.Context, host string, port int, timeout time.D
 	if likelyHTTPS(port) {
 		schemes = []string{"https", "http"}
 	}
+	client := httpClient(timeout, proxy)
 	var last model.Service
 	for _, scheme := range schemes {
 		raw := fmt.Sprintf("%s://%s:%d/", scheme, host, port)
 		if defaultPort(scheme, port) {
 			raw = fmt.Sprintf("%s://%s/", scheme, host)
 		}
-		svc := ProbeURL(ctx, raw, timeout, proxy)
+		svc := probeURLWithClient(ctx, client, raw)
 		if svc.StatusCode > 0 || svc.Title != "" || svc.Server != "" {
 			return svc
 		}
@@ -91,12 +204,46 @@ func ProbeHTTPService(ctx context.Context, host string, port int, timeout time.D
 	return last
 }
 
+// httpClient builds a per-call client (kept for ProbeURL/ProbeHTTPService
+// compatibility). The concurrent path uses sharedHTTPClient instead.
 func httpClient(timeout time.Duration, proxyValue string) *http.Client {
 	transport := &http.Transport{
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 		Proxy:               http.ProxyFromEnvironment,
 		DisableKeepAlives:   true,
 		MaxIdleConnsPerHost: 1,
+	}
+	if proxyValue != "" {
+		if proxyURL, err := url.Parse(proxyValue); err == nil {
+			transport.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+}
+
+// sharedHTTPClient builds one client reused by all probeURLs workers, so the
+// keep-alive connection pool is actually shared. Idle-connection limits scale
+// with concurrency to avoid starving a busy host.
+func sharedHTTPClient(timeout time.Duration, proxyValue string, concurrency int) *http.Client {
+	maxPerHost := concurrency
+	if maxPerHost < 2 {
+		maxPerHost = 2
+	}
+	transport := &http.Transport{
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		Proxy:               http.ProxyFromEnvironment,
+		DisableKeepAlives:   false,
+		MaxIdleConns:        concurrency * 2,
+		MaxIdleConnsPerHost: maxPerHost,
 	}
 	if proxyValue != "" {
 		if proxyURL, err := url.Parse(proxyValue); err == nil {
@@ -183,7 +330,9 @@ func detectTechnologies(header http.Header, body string) ([]string, []string) {
 	return tech, sources
 }
 
-func faviconHash(ctx context.Context, rawURL string, timeout time.Duration, proxy string) string {
+// faviconHash fetches /favicon.ico and returns its murmur3 hash. It accepts the
+// shared client so the concurrent path reuses the connection pool.
+func faviconHash(ctx context.Context, client *http.Client, rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return ""
@@ -191,7 +340,6 @@ func faviconHash(ctx context.Context, rawURL string, timeout time.Duration, prox
 	u.Path = "/favicon.ico"
 	u.RawQuery = ""
 	u.Fragment = ""
-	client := httpClient(timeout, proxy)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return ""

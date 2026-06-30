@@ -65,21 +65,27 @@ func (r *Runner) Run(ctx context.Context) (*model.Result, error) {
 		defer cancel()
 	}
 
+	// Announce all URL targets up front so the WebUI sees them immediately
+	// (target_discovered is a discovery signal, not a probe-completion signal).
 	for _, rawURL := range targets.URLs {
-		select {
-		case <-ctx.Done():
-			return r.finish(result, "stopped", ctx.Err())
-		default:
-		}
 		r.emitter.Emit("target_discovered", map[string]any{"url": rawURL})
-		svc := ProbeURL(ctx, rawURL, r.cfg.Timeout(), r.cfg.Proxy)
-		result.Targets = append(result.Targets, svc)
-		if svc.StatusCode > 0 {
-			r.Logf("[INF] [HTTP] %s [%d] %s", svc.URL, svc.StatusCode, svc.Title)
-			r.emitter.Emit("service_detected", serviceEvent(svc))
-		} else if svc.Error != "" {
-			r.Logf("[WRN] [HTTP] %s %s", rawURL, svc.Error)
-		}
+	}
+	// Probe URLs concurrently with a shared keep-alive client. A failed probe
+	// still emits service_detected (status_code=0 + error) so failures are
+	// visible in real time rather than only in the log.
+	if len(targets.URLs) > 0 {
+		client := sharedHTTPClient(r.cfg.HTTPTimeout(), r.cfg.Proxy, r.cfg.HttpConcurrency())
+		services := probeURLs(ctx, targets.URLs, r.cfg.HttpConcurrency(), client, func(svc model.Service) {
+			if svc.StatusCode > 0 {
+				r.Logf("[INF] [HTTP] %s [%d] %s", svc.URL, svc.StatusCode, svc.Title)
+			} else if svc.Error != "" {
+				r.Logf("[WRN] [HTTP] %s %s", svc.URL, svc.Error)
+			}
+			if svc.StatusCode > 0 || svc.Error != "" {
+				r.emitter.Emit("service_detected", serviceEvent(svc))
+			}
+		})
+		result.Targets = append(result.Targets, services...)
 	}
 
 	if len(targets.Hosts) > 0 {
@@ -251,6 +257,12 @@ func dirHasTemplates(dir string) bool {
 func nucleiTargets(services []model.Service) []string {
 	var targets []string
 	for _, svc := range services {
+		// Skip failed probes so nuclei does not waste time re-attempting URLs
+		// that already failed HTTP detection. A successful probe has a status
+		// code and no error.
+		if svc.Error != "" || svc.StatusCode <= 0 {
+			continue
+		}
 		if svc.URL != "" {
 			targets = appendUnique(targets, svc.URL)
 			continue
@@ -281,7 +293,7 @@ func dedupeServices(services []model.Service) []model.Service {
 }
 
 func serviceEvent(svc model.Service) map[string]any {
-	return map[string]any{
+	ev := map[string]any{
 		"host": svc.Host, "ip": svc.IP, "port": svc.Port, "protocol": svc.Protocol,
 		"scheme": svc.Scheme, "url": svc.URL, "status_code": svc.StatusCode,
 		"title": svc.Title, "server": svc.Server, "tls": svc.TLS,
@@ -289,6 +301,12 @@ func serviceEvent(svc model.Service) map[string]any {
 		"location": svc.Location, "favicon_hash": svc.FaviconHash,
 		"technologies": svc.Technologies, "fingerprint_sources": svc.FingerprintSources,
 	}
+	// Carry the probe error so failed service_detected events are self-describing
+	// (status_code=0 + error) for the WebUI; omitted on success.
+	if svc.Error != "" {
+		ev["error"] = svc.Error
+	}
+	return ev
 }
 
 // vulnEvent builds the vulnerability_found event payload from a model
