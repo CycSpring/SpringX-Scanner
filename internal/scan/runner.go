@@ -158,7 +158,7 @@ func (r *Runner) runPOC(ctx context.Context, result *model.Result) error {
 		Logger:      r.Logf,
 		OnFinding: func(v model.Vulnerability) {
 			r.Logf("[INF] [NucleiPOC] %s - [%s] %s", v.Target, severityLabel(v.Severity), v.TemplateID)
-			r.emitter.Emit("vulnerability_found", map[string]any{"engine": v.Engine, "template_id": v.TemplateID, "severity": v.Severity, "target": v.Target})
+			r.emitter.Emit("vulnerability_found", vulnEvent(v))
 		},
 	})
 	result.Vulnerabilities = append(result.Vulnerabilities, vulns...)
@@ -289,6 +289,49 @@ func serviceEvent(svc model.Service) map[string]any {
 		"location": svc.Location, "favicon_hash": svc.FaviconHash,
 		"technologies": svc.Technologies, "fingerprint_sources": svc.FingerprintSources,
 	}
+}
+
+// vulnEvent builds the vulnerability_found event payload from a model
+// Vulnerability. It carries the full field set so the WebUI can render a
+// detail expansion (matched_at, description, request/response summaries, etc.)
+// in real time without waiting for the final report JSON. Empty string fields
+// are omitted to keep the live stream compact.
+func vulnEvent(v model.Vulnerability) map[string]any {
+	out := map[string]any{
+		"engine":      v.Engine,
+		"template_id": v.TemplateID,
+		"severity":    v.Severity,
+		"target":      v.Target,
+		"name":        v.Name,
+	}
+	if v.MatchedAt != "" {
+		out["matched_at"] = v.MatchedAt
+	}
+	if v.Type != "" {
+		out["type"] = v.Type
+	}
+	if v.Description != "" {
+		out["description"] = v.Description
+	}
+	if v.MatcherName != "" {
+		out["matcher_name"] = v.MatcherName
+	}
+	if v.ExtractorName != "" {
+		out["extractor_name"] = v.ExtractorName
+	}
+	if len(v.ExtractedResults) > 0 {
+		out["extracted_results"] = v.ExtractedResults
+	}
+	if v.RequestSummary != "" {
+		out["request_summary"] = v.RequestSummary
+	}
+	if v.ResponseSummary != "" {
+		out["response_summary"] = v.ResponseSummary
+	}
+	if !v.Timestamp.IsZero() {
+		out["timestamp"] = v.Timestamp
+	}
+	return out
 }
 
 func severityLabel(value string) string {

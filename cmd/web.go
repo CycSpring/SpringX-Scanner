@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/CycSpring/SpringX-Scanner/internal/web"
 	"github.com/spf13/cobra"
@@ -15,6 +16,7 @@ type webOptions struct {
 	addr    string
 	port    int
 	workDir string
+	jobTTL  time.Duration
 }
 
 var webOpts webOptions
@@ -31,6 +33,7 @@ var webCmd = &cobra.Command{
 		srv, err := web.NewServer(web.Options{
 			Addr:    addr,
 			WorkDir: webOpts.workDir,
+			JobTTL:  webOpts.jobTTL,
 		})
 		if err != nil {
 			return err
@@ -49,4 +52,5 @@ func init() {
 	webCmd.Flags().StringVar(&webOpts.addr, "addr", "127.0.0.1", "listen address")
 	webCmd.Flags().IntVar(&webOpts.port, "port", 8849, "listen port")
 	webCmd.Flags().StringVar(&webOpts.workDir, "work-dir", "", "working directory for scan reports (default: current directory)")
+	webCmd.Flags().DurationVar(&webOpts.jobTTL, "job-ttl", 30*time.Minute, "time-to-live for finished scan jobs (0 disables reaping)")
 }

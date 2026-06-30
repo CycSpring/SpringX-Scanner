@@ -178,10 +178,13 @@ function addServiceRow(svc) {
   $("svcEmpty").classList.add("hidden");
   const t = $("svcTable");
   t.classList.remove("hidden");
-  const row = t.querySelector("tbody").insertRow();
-  row.innerHTML = `<td>${esc(svc.host || "")}</td><td>${svc.port || ""}</td>` +
+  const tbody = t.querySelector("tbody");
+  const row = tbody.insertRow();
+  row.className = "expandable";
+  row.innerHTML = `<td><span class="caret">▸</span> ${esc(svc.host || "")}</td><td>${svc.port || ""}</td>` +
     `<td>${svc.status_code || ""}</td><td>${esc(svc.title || "")}</td>` +
-    `<td>${esc(svc.server || "")}</td><td>${esc((svc.technologies || []).join(", "))}</td>`;
+    `<td>${esc(svc.server || "")}</td><td>${chips(svc.technologies)}</td>`;
+  attachDetail(row, () => serviceDetailHTML(svc));
 }
 
 function addVulnRow(v) {
@@ -193,10 +196,77 @@ function addVulnRow(v) {
   t.classList.remove("hidden");
   const sev = v.severity || "info";
   const row = t.querySelector("tbody").insertRow();
+  row.className = "expandable";
   row.innerHTML = `<td class="severity-${esc(sev)}">${esc(sev)}</td>` +
     `<td class="mono">${esc(v.template_id || "")}</td>` +
     `<td class="mono">${esc(v.target || "")}</td>` +
     `<td class="mono">${esc(v.matched_at || "")}</td>`;
+  attachDetail(row, () => vulnDetailHTML(v));
+}
+
+// attachDetail makes a row expandable: clicking toggles a detail row beneath it.
+// detailHTML is a function returning the HTML for the detail cell (deferred so
+// it renders with the latest data).
+function attachDetail(row, detailHTML) {
+  let open = false;
+  let detailRow = null;
+  row.addEventListener("click", () => {
+    if (open) {
+      if (detailRow) detailRow.remove();
+      row.classList.remove("expanded");
+      open = false;
+      return;
+    }
+    detailRow = row.parentNode.insertRow(row.rowIndex);
+    detailRow.className = "detail-row";
+    const cell = detailRow.insertCell();
+    cell.colSpan = row.cells.length;
+    cell.innerHTML = detailHTML();
+    row.classList.add("expanded");
+    open = true;
+  });
+}
+
+// ---- detail HTML builders ----
+function serviceDetailHTML(s) {
+  const f = (label, value) => `<div class="field"><span class="label">${label}</span><span class="value">${value || `<span class="empty">—</span>`}</span></div>`;
+  return [
+    f("IP", esc(s.ip || "")),
+    f("协议", esc(s.protocol || "")),
+    f("Scheme", esc(s.scheme || "")),
+    f("TLS", esc(s.tls || "")),
+    f("内容类型", esc(s.content_type || "")),
+    f("内容长度", s.content_length != null ? String(s.content_length) : ""),
+    f("Location", esc(s.location || "")),
+    f("Favicon", `<span class="mono">${esc(s.favicon_hash || "")}</span>`),
+    f("指纹来源", chips(s.fingerprint_sources)),
+    f("技术栈", chips(s.technologies)),
+    s.url ? f("URL", `<a href="${esc(s.url)}" target="_blank">${esc(s.url)}</a>`) : "",
+    s.banner ? f("Banner", `<pre>${esc(s.banner)}</pre>`) : "",
+    s.error ? f("错误", `<span class="severity-high">${esc(s.error)}</span>`) : "",
+  ].join("");
+}
+
+function vulnDetailHTML(v) {
+  const f = (label, value) => `<div class="field"><span class="label">${label}</span><span class="value">${value || `<span class="empty">—</span>`}</span></div>`;
+  return [
+    f("名称", esc(v.name || "")),
+    f("类型", esc(v.type || "")),
+    f("匹配位置", `<span class="mono">${esc(v.matched_at || "")}</span>`),
+    f("Matcher", esc(v.matcher_name || "")),
+    f("Extractor", esc(v.extractor_name || "")),
+    f("描述", esc(v.description || "")),
+    (v.extracted_results && v.extracted_results.length) ? f("提取结果", v.extracted_results.map(esc).join("<br>")) : "",
+    v.request_summary ? f("请求", `<pre>${esc(v.request_summary)}</pre>`) : "",
+    v.response_summary ? f("响应", `<pre>${esc(v.response_summary)}</pre>`) : "",
+    v.timestamp ? f("时间", esc(fmtTime(v.timestamp))) : "",
+  ].join("");
+}
+
+// chips renders an array as badge chips; empty array yields an em-dash.
+function chips(arr) {
+  if (!arr || !arr.length) return `<span class="empty">—</span>`;
+  return `<span class="chips">${arr.map((x) => `<span class="badge">${esc(String(x))}</span>`).join("")}</span>`;
 }
 
 // ---- event log ----
@@ -300,14 +370,17 @@ function renderReportDetail(name, r) {
 
   $("rd-services").innerHTML = servicesTable(r.targets || []);
   $("rd-vulns").innerHTML = vulnsTable(r.vulnerabilities || []);
+  // Wire delegated expand/collapse on the historical tables now that they
+  // exist in the DOM.
+  wireExpandableDetail(r.targets || [], r.vulnerabilities || []);
 }
 
 function servicesTable(targets) {
   if (!targets.length) return `<p class="muted">未发现存活服务。</p>`;
-  let rows = targets.map((s) =>
-    `<tr><td>${esc(s.host || "")}</td><td>${s.port || ""}</td><td>${s.protocol || ""}</td>` +
+  let rows = targets.map((s, i) =>
+    `<tr class="expandable" data-kind="svc" data-idx="${i}"><td><span class="caret">▸</span> ${esc(s.host || "")}</td><td>${s.port || ""}</td><td>${s.protocol || ""}</td>` +
     `<td>${s.status_code || ""}</td><td>${esc(s.title || "")}</td><td>${esc(s.server || "")}</td>` +
-    `<td>${esc((s.technologies || []).join(", "))}</td>` +
+    `<td>${chips(s.technologies)}</td>` +
     `<td class="mono">${esc(s.favicon_hash || "")}</td>` +
     `<td>${s.url ? `<a href="${esc(s.url)}" target="_blank">${esc(s.url)}</a>` : ""}</td></tr>`
   ).join("");
@@ -316,12 +389,44 @@ function servicesTable(targets) {
 
 function vulnsTable(vulns) {
   if (!vulns.length) return `<p class="muted">未发现 POC 结果。</p>`;
-  let rows = vulns.map((v) =>
-    `<tr><td class="severity-${esc(v.severity || "info")}">${esc(v.severity || "")}</td>` +
+  let rows = vulns.map((v, i) =>
+    `<tr class="expandable" data-kind="vuln" data-idx="${i}"><td class="severity-${esc(v.severity || "info")}">${esc(v.severity || "")}</td>` +
     `<td class="mono">${esc(v.template_id || "")}</td><td>${esc(v.name || "")}</td>` +
     `<td class="mono">${esc(v.target || "")}</td><td class="mono">${esc(v.matched_at || "")}</td></tr>`
   ).join("");
   return `<table><thead><tr><th>严重级别</th><th>模板</th><th>名称</th><th>目标</th><th>匹配</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// wireExpandableDetail attaches delegated click handlers to the historical
+// report tables so their expandable rows open/close detail rows. It stashes the
+// source arrays on the table element so the delegated handler can build detail
+// HTML for the clicked index.
+function wireExpandableDetail(services, vulns) {
+  const svcBody = $("rd-services").querySelector("tbody");
+  const vulnBody = $("rd-vulns").querySelector("tbody");
+  if (svcBody) svcBody._data = services;
+  if (vulnBody) vulnBody._data = vulns;
+  const handler = (tbody, builder) => (e) => {
+    const row = e.target.closest("tr.expandable");
+    if (!row || row.parentNode !== tbody) return;
+    if (row.classList.contains("expanded")) {
+      const next = row.nextElementSibling;
+      if (next && next.classList.contains("detail-row")) next.remove();
+      row.classList.remove("expanded");
+      return;
+    }
+    const idx = Number(row.dataset.idx);
+    const data = tbody._data && tbody._data[idx];
+    if (!data) return;
+    const detailRow = tbody.insertRow(row.rowIndex);
+    detailRow.className = "detail-row";
+    const cell = detailRow.insertCell();
+    cell.colSpan = row.cells.length;
+    cell.innerHTML = builder(data);
+    row.classList.add("expanded");
+  };
+  if (svcBody) svcBody.onclick = handler(svcBody, serviceDetailHTML);
+  if (vulnBody) vulnBody.onclick = handler(vulnBody, vulnDetailHTML);
 }
 
 function metricCard(label, value, status) {

@@ -117,7 +117,12 @@ Data:
 
 ### `vulnerability_found`
 
-Emitted for each Nuclei finding.
+Emitted for each Nuclei finding. The `engine`, `template_id`, `severity`,
+`target`, and `name` fields are always present; the remaining fields are
+included only when non-empty so the live stream stays compact. The WebUI uses
+these to render a detail expansion (matched path, description, request/response
+summaries, extracted values) in real time, without waiting for the final report
+JSON.
 
 Data:
 
@@ -126,9 +131,22 @@ Data:
   "engine": "nuclei",
   "template_id": "springx-smoke",
   "severity": "info",
-  "target": "http://127.0.0.1:8080"
+  "target": "http://127.0.0.1:8080",
+  "name": "SpringX local smoke finding",
+  "matched_at": "http://127.0.0.1:8080/springx-smoke",
+  "type": "http",
+  "description": "...",
+  "matcher_name": "...",
+  "extractor_name": "...",
+  "extracted_results": ["..."],
+  "request_summary": "GET /springx-smoke ...",
+  "response_summary": "HTTP/1.1 200 ...",
+  "timestamp": "2026-06-30T10:11:12+08:00"
 }
 ```
+
+Only `engine`, `template_id`, `severity`, `target`, and `name` are guaranteed;
+the other fields are omitted when empty.
 
 ### `poc_completed`
 

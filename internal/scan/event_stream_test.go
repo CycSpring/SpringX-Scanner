@@ -162,6 +162,15 @@ func TestEventStreamNucleiPOCFullChain(t *testing.T) {
 		t.Fatal("vulnerability_found target is empty")
 	}
 
+	// --- Verify the expanded payload fields (matched_at, name) are present so
+	// the WebUI can render a real-time detail expansion.
+	if vulnEv.Data["matched_at"] == nil || vulnEv.Data["matched_at"] == "" {
+		t.Fatal("vulnerability_found matched_at is missing or empty")
+	}
+	if vulnEv.Data["name"] == nil || vulnEv.Data["name"] == "" {
+		t.Fatal("vulnerability_found name is missing or empty")
+	}
+
 	// --- Verify poc_completed payload: findings count must equal 1.
 	var pocEv *event.Event
 	for i := range events {

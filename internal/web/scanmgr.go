@@ -69,9 +69,10 @@ type childProcess interface {
 // the engine scan_id (learned from scan_started), report paths (from
 // report_written), and the subscriber hub.
 type ScanJob struct {
-	id        string
-	startedAt time.Time
-	args      []string
+	id         string
+	startedAt  time.Time
+	finishedAt time.Time
+	args       []string
 
 	mu          sync.Mutex
 	proc        childProcess
@@ -144,11 +145,13 @@ func (j *ScanJob) appendEvent(ev event.Event) {
 		} else {
 			j.status = StatusCompleted
 		}
+		j.finishedAt = time.Now()
 	case "scan_failed":
 		j.status = StatusFailed
 		if ev.Error != "" {
 			j.errMsg = ev.Error
 		}
+		j.finishedAt = time.Now()
 	}
 	j.mu.Unlock()
 	j.hub.broadcast(ev)
@@ -186,13 +189,24 @@ func NewScanManager(opts ScanManagerOptions) *ScanManager {
 	if opts.Logger == nil {
 		opts.Logger = log.New(log.Writer(), "[scanmgr] ", log.LstdFlags|log.Lmsgprefix)
 	}
-	return &ScanManager{
+	m := &ScanManager{
 		jobs:    map[string]*ScanJob{},
 		exePath: opts.ExePath,
 		workDir: opts.WorkDir,
 		log:     opts.Logger,
 		builder: opts.Builder,
 	}
+	// Seed the job table from disk so GET /api/scans shows history after a
+	// restart. Loaded jobs are read-only tombstones (done closed, no proc).
+	if existing, err := loadJobs(opts.WorkDir); err == nil {
+		for _, j := range existing {
+			j.mgr = m
+			m.jobs[j.id] = j
+		}
+	} else {
+		opts.Logger.Printf("load persisted jobs: %v", err)
+	}
+	return m
 }
 
 // Start launches a scan child process and returns its job_id immediately. The
@@ -267,6 +281,7 @@ func (m *ScanManager) pump(job *ScanJob) {
 		// No terminal event arrived (e.g. process killed before emitting one);
 		// synthesize a failed terminal event so SSE clients unblock.
 		job.status = StatusFailed
+		job.finishedAt = time.Now()
 		if waitErr != nil {
 			job.errMsg = waitErr.Error()
 		} else {
@@ -283,6 +298,13 @@ func (m *ScanManager) pump(job *ScanJob) {
 		job.hub.broadcast(ev)
 	} else {
 		job.mu.Unlock()
+	}
+
+	// Persist the terminal snapshot so /api/scans survives a restart. Best-effort.
+	if job.mgr != nil {
+		if err := saveJob(job.mgr.workDir, job); err != nil {
+			job.mgr.log.Printf("job %s: persist snapshot: %v", job.id, err)
+		}
 	}
 }
 
@@ -312,6 +334,71 @@ func (m *ScanManager) Cancel(jobID string) error {
 		}
 	}
 	return nil
+}
+
+// StartReaper spawns a background goroutine that periodically removes terminal
+// jobs older than ttl when they have no active SSE subscribers. ttl <= 0
+// disables reaping. It stops when ctx is cancelled. Called from Server.Start.
+func (m *ScanManager) StartReaper(ctx context.Context, ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	interval := ttl / 4
+	if interval < time.Minute {
+		interval = time.Minute
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.reapExpired(ttl)
+			}
+		}
+	}()
+}
+
+// reapExpired removes terminal jobs that have been finished longer than ttl and
+// have no active subscribers. It also deletes their persisted snapshots.
+func (m *ScanManager) reapExpired(ttl time.Duration) {
+	m.mu.Lock()
+	candidates := make([]*ScanJob, 0, len(m.jobs))
+	for _, j := range m.jobs {
+		candidates = append(candidates, j)
+	}
+	m.mu.Unlock()
+
+	now := time.Now()
+	for _, j := range candidates {
+		j.mu.Lock()
+		terminal := j.status.terminal()
+		finished := j.finishedAt
+		j.mu.Unlock()
+		if !terminal || finished.IsZero() {
+			continue
+		}
+		// Require the pump to have exited: until done is closed, the scan may
+		// still emit trailing events (notably report_written after
+		// scan_completed). Removing the job earlier could drop those.
+		select {
+		case <-j.done:
+		default:
+			continue
+		}
+		if now.Sub(finished) < ttl {
+			continue
+		}
+		if j.hub.count() > 0 {
+			continue // a client is mid-stream; skip this tick
+		}
+		m.removeJob(j.id)
+		if err := deleteJob(m.workDir, j.id); err != nil {
+			m.log.Printf("reaper: delete persisted job %s: %v", j.id, err)
+		}
+	}
 }
 
 // Get returns the job for jobID, or nil.

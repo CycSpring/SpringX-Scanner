@@ -19,6 +19,7 @@ Flags:
 | `--addr` | `127.0.0.1` | listen address |
 | `--port` | `8849` | listen port |
 | `--work-dir` | current dir | working directory for scan reports (resolved to an absolute path) |
+| `--job-ttl` | `30m` | time-to-live for finished scan jobs; a background reaper removes terminal jobs (and their persisted snapshots) older than this once they have no active SSE subscribers. `0` disables reaping. |
 
 ## How it works
 
@@ -41,6 +42,8 @@ Key design points:
 - **Cache as source of truth.** Each job caches its full event history. New SSE connections replay the cache before streaming live events, so a reconnect never loses terminal events (`scan_completed` / `scan_failed` / `report_written`).
 - **Cancellation.** `os.Interrupt` is not deliverable to Windows child processes, so on Windows the child is started in its own process group (`CREATE_NEW_PROCESS_GROUP`) and cancelled with `GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)` — which the Go runtime maps to `os.Interrupt` inside the child, so `scan.go` finishes with `status:"stopped"` and still emits `report_written`. After a 5s grace window the child is force-killed. On Unix, `SIGTERM` → 5s → `SIGKILL`.
 - **Reports.** Reports land in `reports/{html,markdown,data}/` under the work directory. The reports API only reads `reports/data/*.json` by basename and rejects path traversal.
+- **Persistence & TTL.** When a job reaches a terminal state, its snapshot (status, scan_id, report paths, full event history) is written to `reports/jobs/<job_id>.json` under the work directory. On restart, `NewScanManager` loads these snapshots so `GET /api/scans` still shows prior history and SSE can replay a past job's cached events. A background reaper (started by `Server.Start`, tuned by `--job-ttl`) removes terminal jobs older than the TTL once they have no active SSE subscribers, deleting both the in-memory entry and the persisted snapshot. `--job-ttl 0` disables reaping.
+- **Detail expansion.** The live service and vulnerability tables (and the historical report tables) have expandable rows: click a row to reveal the full fingerprint (TLS, content type/length, location, favicon hash, fingerprint sources, banner) or vulnerability detail (matched path, description, matcher/extractor, extracted results, request/response summaries). The live `vulnerability_found` event carries these fields so the detail is available in real time, not only from the final report JSON.
 
 ## HTTP API
 
@@ -97,3 +100,13 @@ The WebUI is built into the same single binary; no separate frontend toolchain i
 ```
 
 `go mod tidy` promotes `golang.org/x/sys` (already present as a nuclei transitive dependency) to a direct dependency for the Windows cancellation path; no new modules are downloaded.
+
+## Smoke Tests
+
+The fake-runner unit tests in `internal/web/` run as part of the default `go test ./...` suite and need no external binary. A real-binary integration test is gated behind the `smoke` build tag and exercises the full `springx scan --jsonl-only` child process end to end against a local `httptest` target with the `springx-smoke` nuclei template. The test builds `springx.exe` itself into a temp dir, so no pre-built binary is required.
+
+```powershell
+go test -tags smoke -timeout 300s ./internal/web/...
+```
+
+It asserts the complete event chain (`scan_started → poc_started → vulnerability_found → poc_completed → scan_completed → report_written`), envelope consistency, the on-disk JSON report, and that the HTML/Markdown siblings exist.

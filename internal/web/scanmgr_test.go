@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -367,4 +369,102 @@ func contains(s []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// TestSSENoDuplicateOnReplayRace exercises the codex P1 fix end-to-end through
+// a real HTTP/SSE response. It drives a fake scan to completion with distinct
+// seqs, then connects a late SSE subscriber and asserts that every event type
+// appears exactly once in the SSE output — in particular that
+// report_written is neither dropped (the lastSeq<= regression) nor duplicated.
+func TestSSENoDuplicateOnReplayRace(t *testing.T) {
+	scanID := "dedup1"
+	events := scriptedEvents(scanID)
+	// The fake child bypasses the Emitter, so assign distinct seqs by hand to
+	// mirror what a real scan produces (Emitter assigns seq >= 1).
+	for i := range events {
+		events[i].Seq = uint64(i) + 1
+	}
+	srv := newTestServer(t, func() []event.Event {
+		// Copy so each call returns its own slice with the preset seqs.
+		out := make([]event.Event, len(events))
+		copy(out, events)
+		return out
+	})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Start the scan.
+	body := strings.NewReader(`{"url":"http://x"}`)
+	resp, err := ts.Client().Post(ts.URL+"/api/scan", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/scan: %v", err)
+	}
+	var sr scanResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
+		t.Fatalf("decode scan response: %v", err)
+	}
+	resp.Body.Close()
+
+	// Subscribe via SSE after the scan is done (late subscriber = replay path).
+	<-mgrDone(srv, sr.JobID)
+	res, err := ts.Client().Get(ts.URL + "/api/events?id=" + sr.JobID)
+	if err != nil {
+		t.Fatalf("GET /api/events: %v", err)
+	}
+	defer res.Body.Close()
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read SSE body: %v", err)
+	}
+
+	// Count each event type in the SSE output; every type must appear exactly once.
+	counts := countSSEEventTypes(string(data))
+	want := []string{
+		"scan_started", "target_discovered", "service_detected",
+		"poc_started", "vulnerability_found", "poc_completed",
+		"scan_completed", "report_written",
+	}
+	for _, ty := range want {
+		if counts[ty] != 1 {
+			t.Fatalf("SSE event %q appeared %d times, want 1\noutput: %s", ty, counts[ty], string(data))
+		}
+	}
+}
+
+// mgrDone returns a channel that closes when the job's pump has finished.
+func mgrDone(srv *Server, jobID string) <-chan struct{} {
+	ch := make(chan struct{})
+	go func() {
+		defer close(ch)
+		// Poll briefly until the job is known and its pump done.
+		for i := 0; i < 200; i++ {
+			if j := srv.mgr.Get(jobID); j != nil {
+				select {
+				case <-j.done:
+					return
+				default:
+				}
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	return ch
+}
+
+// countSSEEventTypes parses SSE `data: {...}` lines and tallies the `type`
+// field of each event.
+func countSSEEventTypes(s string) map[string]int {
+	out := map[string]int{}
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var ev event.Event
+		if err := json.Unmarshal([]byte(line[len("data: "):]), &ev); err != nil {
+			continue
+		}
+		out[ev.Type]++
+	}
+	return out
 }

@@ -18,6 +18,7 @@ import (
 type Server struct {
 	addr    string
 	workDir string
+	jobTTL  time.Duration
 	mgr     *ScanManager
 	mux     *http.ServeMux
 	srv     *http.Server
@@ -26,9 +27,10 @@ type Server struct {
 
 // Options configures a Server. Zero values are filled with sensible defaults.
 type Options struct {
-	Addr    string // listen address, e.g. "127.0.0.1:8849"
-	WorkDir string // working dir for scan reports; defaults to os.Getwd()
-	ExePath string // path to the springx binary; defaults to os.Executable()
+	Addr    string        // listen address, e.g. "127.0.0.1:8849"
+	WorkDir string        // working dir for scan reports; defaults to os.Getwd()
+	ExePath string        // path to the springx binary; defaults to os.Executable()
+	JobTTL  time.Duration // terminal-job TTL; 0 disables the reaper
 	Logger  *log.Logger
 	// Builder optionally overrides how scan child processes are constructed;
 	// tests inject a fake that emits a canned JSONL stream. Defaults to the
@@ -75,6 +77,7 @@ func NewServer(opts Options) (*Server, error) {
 	s := &Server{
 		addr:    opts.Addr,
 		workDir: opts.WorkDir,
+		jobTTL:  opts.JobTTL,
 		mgr:     mgr,
 		mux:     http.NewServeMux(),
 		log:     opts.Logger,
@@ -127,6 +130,9 @@ func (s *Server) Addr() string { return s.addr }
 
 // Start serves HTTP until ctx is cancelled or the listener fails. It blocks.
 func (s *Server) Start(ctx context.Context) error {
+	// Start the terminal-job TTL reaper (no-op if JobTTL <= 0). It stops with ctx.
+	s.mgr.StartReaper(ctx, s.jobTTL)
+
 	s.srv = &http.Server{
 		Addr:              s.addr,
 		Handler:           s.mux,

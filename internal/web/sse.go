@@ -46,9 +46,10 @@ func newSubscriber() *subscriber {
 	}
 }
 
-// sseHub fans out events to all subscribers of a single job. It is owned by
-// the job and guarded by the job's mutex (subscribers slice is mutated under
-// job.mu). Events are also appended to the job's cache before fan-out.
+// sseHub fans out events to all subscribers of a single job. It is owned by the
+// job; its subscribers map is guarded by the hub's own mutex (h.mu), NOT the
+// job's mutex. The TTL reaper queries count() under h.mu to decide whether a
+// terminal job is safe to remove.
 type sseHub struct {
 	mu          sync.Mutex
 	subscribers map[*subscriber]struct{}
@@ -56,6 +57,13 @@ type sseHub struct {
 
 func newHub() *sseHub {
 	return &sseHub{subscribers: map[*subscriber]struct{}{}}
+}
+
+// count returns the number of active SSE subscribers, for TTL reaper safety.
+func (h *sseHub) count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subscribers)
 }
 
 func (h *sseHub) subscribe() *subscriber {
@@ -121,10 +129,26 @@ func (s *Server) serveSSE(w http.ResponseWriter, r *http.Request, job *ScanJob) 
 	sub := job.hub.subscribe()
 	defer job.hub.unsubscribe(sub)
 
-	// 1. Replay cached history (the source of truth).
+	// 1. Replay cached history (the source of truth). Track the seq of every
+	// event we have sent so that any event broadcast between subscribe() and
+	// this replay (which therefore landed in BOTH the history and the
+	// subscriber queue) is not delivered twice — a duplicate would
+	// double-count rows/metrics in the live tables.
+	//
+	// A set (not a high-water mark) is used because the ordinary and terminal
+	// queues can deliver out of order; a single lastSeq upper bound would
+	// wrongly drop a not-yet-sent event whose seq is below the bound. Events
+	// with Seq == 0 (e.g. fake test events that bypass the Emitter) are never
+	// deduplicated: real scans always assign Seq >= 1, and the race that
+	// produces duplicates only occurs for live events, which always have a
+	// real seq.
+	sent := make(map[uint64]bool)
 	for _, ev := range job.history() {
 		if !writeSSEEvent(w, flusher, ev) {
 			return
+		}
+		if ev.Seq != 0 {
+			sent[ev.Seq] = true
 		}
 	}
 
@@ -141,13 +165,19 @@ func (s *Server) serveSSE(w http.ResponseWriter, r *http.Request, job *ScanJob) 
 		case <-ctx.Done():
 			return
 		case <-job.done:
-			drainSubscriber(w, flusher, sub)
+			drainSubscriber(w, flusher, sub, sent)
 			return
 		case ev := <-sub.ordinary:
+			if !shouldSend(sent, ev) {
+				continue
+			}
 			if !writeSSEEvent(w, flusher, ev) {
 				return
 			}
 		case ev := <-sub.terminal:
+			if !shouldSend(sent, ev) {
+				continue
+			}
 			if !writeSSEEvent(w, flusher, ev) {
 				return
 			}
@@ -155,14 +185,37 @@ func (s *Server) serveSSE(w http.ResponseWriter, r *http.Request, job *ScanJob) 
 	}
 }
 
-func drainSubscriber(w http.ResponseWriter, flusher http.Flusher, sub *subscriber) {
+// shouldSend reports whether ev should be sent to the client, marking it sent.
+// Events with Seq == 0 are always sent (no dedup); events with Seq > 0 are
+// sent only if that seq has not been delivered already.
+func shouldSend(sent map[uint64]bool, ev event.Event) bool {
+	if ev.Seq == 0 {
+		return true
+	}
+	if sent[ev.Seq] {
+		return false
+	}
+	sent[ev.Seq] = true
+	return true
+}
+
+// drainSubscriber flushes any queued events not yet sent after the pump has
+// exited, so terminal events (e.g. report_written arriving after
+// scan_completed) are not lost.
+func drainSubscriber(w http.ResponseWriter, flusher http.Flusher, sub *subscriber, sent map[uint64]bool) {
 	for {
 		select {
 		case ev := <-sub.terminal:
+			if !shouldSend(sent, ev) {
+				continue
+			}
 			if !writeSSEEvent(w, flusher, ev) {
 				return
 			}
 		case ev := <-sub.ordinary:
+			if !shouldSend(sent, ev) {
+				continue
+			}
 			if !writeSSEEvent(w, flusher, ev) {
 				return
 			}
