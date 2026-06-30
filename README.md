@@ -58,7 +58,15 @@ HTTP probing runs concurrently over a shared keep-alive client. Use these flags 
 | `--gonmap-timeout` | `5` | TCP connect timeout in seconds (port scanning / `isPortOpen`). |
 | `-t/--threads` | `5` | Drives TCP port-scan concurrency (`threads×20`, clamped 5–500). |
 
-Probe resilience: a transient HTTP network error (timeout, connection refused, EOF) is retried once; failed probes still emit `service_detected` with `status_code: 0` and an `error` field and appear in the report so unreachable targets are visible rather than silently dropped. Failed probes are not fed to Nuclei.
+Probe resilience: a transient HTTP network error (timeout, connection refused, EOF) is retried once; failed probes still emit `service_detected` with `status_code: 0` and an `error` field and appear in the report so unreachable targets are visible rather than silently dropped. Failed probes are not fed to Nuclei. TCP-open but non-HTTP ports capture a service greeting banner (e.g. SSH/FTP/SMTP/MySQL) into `service.banner`.
+
+## Nuclei Templates
+
+POC scanning loads templates from `pocs\nuclei` under the working directory by default, overridable with `--nuclei-template-dir`. If the directory is missing or empty, POC is skipped with a clear reason (the report and `poc_completed` event record `template_count: 0`).
+
+The report and `poc_started`/`poc_completed` events carry `template_count` and `template_version` (read from a `VERSION` file in the template dir, if present) so you can see how many templates ran.
+
+`--use-builtin-smoke-template` writes the embedded `springx-smoke` test template into a temp dir and runs it. This is for testing only — it is not a real vulnerability template and is never used as a silent default for production scans.
 
 ## WebUI
 

@@ -249,6 +249,11 @@ function serviceDetailHTML(s) {
 
 function vulnDetailHTML(v) {
   const f = (label, value) => `<div class="field"><span class="label">${label}</span><span class="value">${value || `<span class="empty">—</span>`}</span></div>`;
+  const metaRows = (m) => {
+    if (!m || Object.keys(m).length === 0) return "";
+    const rows = Object.keys(m).sort().map((k) => `<code>${esc(k)}=${esc(String(m[k]))}</code>`).join(" ");
+    return f("元数据", `<span class="chips">${rows}</span>`);
+  };
   return [
     f("名称", esc(v.name || "")),
     f("类型", esc(v.type || "")),
@@ -259,6 +264,7 @@ function vulnDetailHTML(v) {
     (v.extracted_results && v.extracted_results.length) ? f("提取结果", v.extracted_results.map(esc).join("<br>")) : "",
     v.request_summary ? f("请求", `<pre>${esc(v.request_summary)}</pre>`) : "",
     v.response_summary ? f("响应", `<pre>${esc(v.response_summary)}</pre>`) : "",
+    metaRows(v.metadata),
     v.timestamp ? f("时间", esc(fmtTime(v.timestamp))) : "",
   ].join("");
 }

@@ -312,3 +312,110 @@ func decodeScanEvents(t *testing.T, buf *bytes.Buffer) []event.Event {
 	}
 	return out
 }
+
+// TestCountTemplates verifies the template-count + version reader: a directory
+// with 2 yaml files and a VERSION file yields count=2 and the version string.
+func TestCountTemplates(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte("id: a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.yml"), []byte("id: b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ignore.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "VERSION"), []byte("9.8.2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	count, version := countTemplates(dir)
+	if count != 2 {
+		t.Fatalf("count = %d, want 2", count)
+	}
+	if version != "9.8.2" {
+		t.Fatalf("version = %q, want 9.8.2", version)
+	}
+	// Missing dir returns 0/"".
+	c, v := countTemplates(filepath.Join(dir, "nope"))
+	if c != 0 || v != "" {
+		t.Fatalf("missing dir: count=%d version=%q, want 0/empty", c, v)
+	}
+}
+
+// TestRunPOCBuiltinTemplateExplicit verifies that --use-builtin-smoke-template
+// writes the embedded template and POC is NOT skipped (a target is probed and
+// the smoke finding is produced). It does NOT test the default-missing case,
+// which must still skip POC (per codex: never fake a real template by default).
+func TestRunPOCBuiltinTemplateExplicit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/springx-smoke" {
+			_, _ = w.Write([]byte("springx-smoke-ok"))
+			return
+		}
+		_, _ = w.Write([]byte("<html><title>SpringX Smoke</title></html>"))
+	}))
+	defer server.Close()
+
+	var buf bytes.Buffer
+	cfg := Config{
+		Version:         "test",
+		WorkDir:         t.TempDir(),
+		TargetURL:       server.URL,
+		GonmapTimeout:   2,
+		HTTPTimeoutSec:  5,
+		NoPOC:           false,
+		UseBuiltinSmoke: true,
+		// TempDir left empty: the embedded template is written under GetTempDir()
+		// and the nuclei engine may hold a file handle past the test, which would
+		// break t.TempDir()'s cleanup on Windows. Empty resolves to D:\Temp.
+		NucleiIDs: []string{"springx-smoke"},
+		RawArgs:   []string{"scan"},
+	}
+	result, err := NewRunner(cfg, &buf, event.NewEmitter(&buf)).Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Scan.POCSkipped {
+		t.Fatalf("POC was skipped with --use-builtin-smoke-template: %s", result.Scan.POCSkipReason)
+	}
+	if result.Scan.POC.TemplateCount < 1 {
+		t.Fatalf("TemplateCount = %d, want >=1", result.Scan.POC.TemplateCount)
+	}
+	if len(result.Vulnerabilities) != 1 {
+		t.Fatalf("vulnerabilities = %d, want 1 (springx-smoke)", len(result.Vulnerabilities))
+	}
+	if result.Vulnerabilities[0].TemplateID != "springx-smoke" {
+		t.Fatalf("template_id = %q, want springx-smoke", result.Vulnerabilities[0].TemplateID)
+	}
+}
+
+func TestRunPOCBuiltinTemplateWriteFailureSkipsWithReason(t *testing.T) {
+	tempFile := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(tempFile, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	cfg := Config{
+		Version:         "test",
+		WorkDir:         t.TempDir(),
+		TargetURL:       "http://127.0.0.1:1",
+		TempDir:         tempFile,
+		UseBuiltinSmoke: true,
+		RawArgs:         []string{"scan"},
+	}
+	result, err := NewRunner(cfg, &buf, event.NewEmitter(&buf)).Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !result.Scan.POCSkipped {
+		t.Fatal("expected POC to be skipped when built-in smoke template cannot be written")
+	}
+	if !strings.Contains(result.Scan.POCSkipReason, "failed to write built-in smoke template") {
+		t.Fatalf("skip reason = %q", result.Scan.POCSkipReason)
+	}
+	if result.Scan.POC.Error == "" {
+		t.Fatal("expected POC error to record built-in template write failure")
+	}
+}

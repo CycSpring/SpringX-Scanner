@@ -37,6 +37,7 @@ type Config struct {
 	POCConcurrency      int
 	HTTPConcurrency     int
 	HTTPTimeoutSec      int
+	UseBuiltinSmoke     bool
 	Engines             string
 	TemplateDir         string
 	TempDir             string

@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/CycSpring/SpringX-Scanner/internal/model"
@@ -20,6 +21,12 @@ func RenderMarkdown(result *model.Result) string {
 	if result.Scan.POC.Engine != "" {
 		fmt.Fprintf(&b, "- POC 引擎: %s\n", result.Scan.POC.Engine)
 		fmt.Fprintf(&b, "- POC 模板目录: `%s`\n", result.Scan.POC.TemplateDir)
+		if result.Scan.POC.TemplateCount > 0 {
+			fmt.Fprintf(&b, "- POC 模板数: %d\n", result.Scan.POC.TemplateCount)
+		}
+		if result.Scan.POC.TemplateVersion != "" {
+			fmt.Fprintf(&b, "- POC 模板版本: %s\n", result.Scan.POC.TemplateVersion)
+		}
 		fmt.Fprintf(&b, "- POC 目标数: %d\n", result.Scan.POC.Targets)
 		fmt.Fprintf(&b, "- POC 耗时: %s\n", md(firstNonEmpty(result.Scan.POC.Duration, "-")))
 		if len(result.Scan.POC.Tags) > 0 {
@@ -48,13 +55,13 @@ func RenderMarkdown(result *model.Result) string {
 	if len(result.Targets) == 0 {
 		fmt.Fprintf(&b, "未发现服务探测结果。\n")
 	} else {
-		fmt.Fprintf(&b, "| # | 主机 | 端口 | 协议 | 状态 | 标题 | Server | 技术栈 | 内容类型 | Favicon | URL | 错误 |\n")
-		fmt.Fprintf(&b, "|---:|---|---:|---|---:|---|---|---|---|---|---|---|\n")
+		fmt.Fprintf(&b, "| # | 主机 | 端口 | 协议 | 状态 | 标题 | Server | 技术栈 | 内容类型 | Favicon | URL | Banner | 错误 |\n")
+		fmt.Fprintf(&b, "|---:|---|---:|---|---:|---|---|---|---|---|---|---|---|\n")
 		for i, svc := range result.Targets {
-			fmt.Fprintf(&b, "| %d | %s | %d | %s | %d | %s | %s | %s | %s | %s | %s | %s |\n",
+			fmt.Fprintf(&b, "| %d | %s | %d | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s |\n",
 				i+1, md(svc.Host), svc.Port, md(firstNonEmpty(svc.Protocol, svc.Scheme, svc.Service)),
 				svc.StatusCode, md(svc.Title), md(svc.Server), md(strings.Join(svc.Technologies, ",")),
-				md(svc.ContentType), md(svc.FaviconHash), md(svc.URL), md(svc.Error))
+				md(svc.ContentType), md(svc.FaviconHash), md(svc.URL), md(svc.Banner), md(svc.Error))
 		}
 	}
 
@@ -66,11 +73,12 @@ func RenderMarkdown(result *model.Result) string {
 			fmt.Fprintf(&b, "未发现 POC 结果。\n")
 		}
 	} else {
-		fmt.Fprintf(&b, "| # | 严重级别 | 模板 | 名称 | 目标 | 匹配 |\n")
-		fmt.Fprintf(&b, "|---:|---|---|---|---|---|\n")
+		fmt.Fprintf(&b, "| # | 严重级别 | 模板 | 名称 | 目标 | 匹配 | 元数据 |\n")
+		fmt.Fprintf(&b, "|---:|---|---|---|---|---|---|\n")
 		for i, vuln := range result.Vulnerabilities {
-			fmt.Fprintf(&b, "| %d | %s | %s | %s | %s | %s |\n",
-				i+1, md(vuln.Severity), md(vuln.TemplateID), md(vuln.Name), md(vuln.Target), md(vuln.MatchedAt))
+			meta := mdMetadata(vuln.Metadata)
+			fmt.Fprintf(&b, "| %d | %s | %s | %s | %s | %s | %s |\n",
+				i+1, md(vuln.Severity), md(vuln.TemplateID), md(vuln.Name), md(vuln.Target), md(vuln.MatchedAt), meta)
 		}
 	}
 
@@ -106,4 +114,22 @@ func md(value string) string {
 		return "-"
 	}
 	return value
+}
+
+// mdMetadata renders a vulnerability's metadata map as sorted "key=value"
+// pairs joined by "; ", for the markdown report's 元数据 column.
+func mdMetadata(m map[string]any) string {
+	if len(m) == 0 {
+		return "-"
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var parts []string
+	for _, k := range keys {
+		parts = append(parts, k+"="+fmt.Sprintf("%v", m[k]))
+	}
+	return md(strings.Join(parts, "; "))
 }

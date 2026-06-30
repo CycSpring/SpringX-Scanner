@@ -113,12 +113,36 @@ func (r *Runner) Run(ctx context.Context) (*model.Result, error) {
 }
 
 func (r *Runner) runPOC(ctx context.Context, result *model.Result) error {
+	templateDir := r.cfg.TemplateDir
+	// --use-builtin-smoke-template: write the embedded smoke template into a
+	// temp dir and use it. This is a testing affordance, never a silent default.
+	if r.cfg.UseBuiltinSmoke {
+		dir, err := writeBuiltinSmokeTemplate(r.cfg.GetTempDir())
+		if err != nil {
+			result.Scan.POC = model.POCInfo{
+				Engine:      "nuclei",
+				TemplateDir: templateDir,
+				Tags:        append([]string{}, r.cfg.NucleiTags...),
+				Severity:    r.cfg.NucleiSeverity,
+				IDs:         append([]string{}, r.cfg.NucleiIDs...),
+				Error:       "failed to write built-in smoke template: " + err.Error(),
+			}
+			r.markPOCSkipped(result, result.Scan.POC.Error)
+			r.Logf("[WRN] POC scan skipped: %s", result.Scan.POCSkipReason)
+			r.emitPOCCompleted(result)
+			return nil
+		}
+		templateDir = dir
+	}
+	tplCount, tplVersion := countTemplates(templateDir)
 	result.Scan.POC = model.POCInfo{
-		Engine:      "nuclei",
-		TemplateDir: r.cfg.TemplateDir,
-		Tags:        append([]string{}, r.cfg.NucleiTags...),
-		Severity:    r.cfg.NucleiSeverity,
-		IDs:         append([]string{}, r.cfg.NucleiIDs...),
+		Engine:          "nuclei",
+		TemplateDir:     templateDir,
+		TemplateCount:   tplCount,
+		TemplateVersion: tplVersion,
+		Tags:            append([]string{}, r.cfg.NucleiTags...),
+		Severity:        r.cfg.NucleiSeverity,
+		IDs:             append([]string{}, r.cfg.NucleiIDs...),
 	}
 	if r.cfg.NoPOC {
 		r.markPOCSkipped(result, "--nopoc enabled")
@@ -126,8 +150,8 @@ func (r *Runner) runPOC(ctx context.Context, result *model.Result) error {
 		r.emitPOCCompleted(result)
 		return nil
 	}
-	if !dirHasTemplates(r.cfg.TemplateDir) {
-		r.markPOCSkipped(result, "nuclei template directory not found or empty: "+r.cfg.TemplateDir)
+	if !dirHasTemplates(templateDir) {
+		r.markPOCSkipped(result, "nuclei template directory not found or empty: "+templateDir+" (use --nuclei-template-dir to specify, or --use-builtin-smoke-template for testing)")
 		r.Logf("[WRN] POC scan skipped: %s", result.Scan.POCSkipReason)
 		r.emitPOCCompleted(result)
 		return nil
@@ -145,15 +169,16 @@ func (r *Runner) runPOC(ctx context.Context, result *model.Result) error {
 	result.Scan.POCExecuted = true
 	result.Scan.POC.Executed = true
 	result.Scan.POC.Targets = len(targets)
-	r.Logf("[INF] 开始 Nuclei POC 扫描，目标:%d 模板:%s tags:%s severity:%s ids:%s", len(targets), r.cfg.TemplateDir, strings.Join(r.cfg.NucleiTags, ","), r.cfg.NucleiSeverity, strings.Join(r.cfg.NucleiIDs, ","))
+	r.Logf("[INF] 开始 Nuclei POC 扫描，目标:%d 模板:%s tags:%s severity:%s ids:%s", len(targets), templateDir, strings.Join(r.cfg.NucleiTags, ","), r.cfg.NucleiSeverity, strings.Join(r.cfg.NucleiIDs, ","))
 	r.emitter.Emit("poc_started", map[string]any{
-		"engine": "nuclei", "targets": len(targets), "template_dir": r.cfg.TemplateDir,
+		"engine": "nuclei", "targets": len(targets), "template_dir": templateDir,
+		"template_count": tplCount, "template_version": tplVersion,
 		"tags": r.cfg.NucleiTags, "severity": r.cfg.NucleiSeverity, "ids": r.cfg.NucleiIDs,
 	})
 
 	vulns, err := nucleirunner.Run(ctx, nucleirunner.Config{
 		Targets:     targets,
-		TemplateDir: r.cfg.TemplateDir,
+		TemplateDir: templateDir,
 		Tags:        r.cfg.NucleiTags,
 		Severity:    r.cfg.NucleiSeverity,
 		IDs:         r.cfg.NucleiIDs,
@@ -189,8 +214,11 @@ func (r *Runner) emitPOCCompleted(result *model.Result) {
 	r.emitter.Emit("poc_completed", map[string]any{
 		"engine": result.Scan.POC.Engine, "targets": result.Scan.POC.Targets,
 		"findings": result.Scan.POC.Findings, "duration": result.Scan.POC.Duration,
-		"template_dir": result.Scan.POC.TemplateDir, "skipped": result.Scan.POC.Skipped,
-		"skip_reason": result.Scan.POC.SkipReason, "error": result.Scan.POC.Error,
+		"template_dir":     result.Scan.POC.TemplateDir,
+		"template_count":   result.Scan.POC.TemplateCount,
+		"template_version": result.Scan.POC.TemplateVersion,
+		"skipped":          result.Scan.POC.Skipped,
+		"skip_reason":      result.Scan.POC.SkipReason, "error": result.Scan.POC.Error,
 	})
 }
 
@@ -234,24 +262,36 @@ func (r *Runner) note(result *model.Result, msg string) {
 	r.Logf("[WRN] %s", msg)
 }
 
-func dirHasTemplates(dir string) bool {
+// countTemplates walks dir and returns (count, version): the number of
+// .yaml/.yml/.json files and the contents of a VERSION file if present. It is
+// called once per scan in the POC phase, so the walk cost is acceptable even
+// for large template directories.
+func countTemplates(dir string) (int, string) {
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
-		return false
+		return 0, ""
 	}
-	found := false
+	count := 0
 	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext == ".yaml" || ext == ".yml" || ext == ".json" {
-			found = true
-			return filepath.SkipAll
+			count++
 		}
 		return nil
 	})
-	return found
+	version := ""
+	if data, err := os.ReadFile(filepath.Join(dir, "VERSION")); err == nil {
+		version = strings.TrimSpace(string(data))
+	}
+	return count, version
+}
+
+func dirHasTemplates(dir string) bool {
+	count, _ := countTemplates(dir)
+	return count > 0
 }
 
 func nucleiTargets(services []model.Service) []string {
@@ -300,11 +340,16 @@ func serviceEvent(svc model.Service) map[string]any {
 		"content_type": svc.ContentType, "content_length": svc.ContentLength,
 		"location": svc.Location, "favicon_hash": svc.FaviconHash,
 		"technologies": svc.Technologies, "fingerprint_sources": svc.FingerprintSources,
+		"service": svc.Service,
 	}
 	// Carry the probe error so failed service_detected events are self-describing
 	// (status_code=0 + error) for the WebUI; omitted on success.
 	if svc.Error != "" {
 		ev["error"] = svc.Error
+	}
+	// Carry the TCP banner (e.g. SSH/FTP greeting) for non-HTTP open ports.
+	if svc.Banner != "" {
+		ev["banner"] = svc.Banner
 	}
 	return ev
 }

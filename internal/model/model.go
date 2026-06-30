@@ -29,18 +29,20 @@ type ScanInfo struct {
 }
 
 type POCInfo struct {
-	Engine      string   `json:"engine,omitempty"`
-	Executed    bool     `json:"executed"`
-	Skipped     bool     `json:"skipped"`
-	SkipReason  string   `json:"skip_reason,omitempty"`
-	TemplateDir string   `json:"template_dir,omitempty"`
-	Targets     int      `json:"targets"`
-	Findings    int      `json:"findings"`
-	Duration    string   `json:"duration,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Severity    string   `json:"severity,omitempty"`
-	IDs         []string `json:"ids,omitempty"`
-	Error       string   `json:"error,omitempty"`
+	Engine          string   `json:"engine,omitempty"`
+	Executed        bool     `json:"executed"`
+	Skipped         bool     `json:"skipped"`
+	SkipReason      string   `json:"skip_reason,omitempty"`
+	TemplateDir     string   `json:"template_dir,omitempty"`
+	TemplateCount   int      `json:"template_count,omitempty"`
+	TemplateVersion string   `json:"template_version,omitempty"`
+	Targets         int      `json:"targets"`
+	Findings        int      `json:"findings"`
+	Duration        string   `json:"duration,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	Severity        string   `json:"severity,omitempty"`
+	IDs             []string `json:"ids,omitempty"`
+	Error           string   `json:"error,omitempty"`
 }
 
 type ReportPaths struct {

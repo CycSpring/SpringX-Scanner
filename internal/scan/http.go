@@ -80,6 +80,9 @@ func probeURLWithClient(ctx context.Context, client *http.Client, rawURL string)
 	svc.StatusCode = resp.StatusCode
 	svc.Server = resp.Header.Get("Server")
 	svc.ContentType = resp.Header.Get("Content-Type")
+	// net/http reports ContentLength == -1 for chunked/unknown-length responses;
+	// the model field's omitempty only drops 0, so the >0 guard prevents a "-1"
+	// from leaking into the JSON/event stream.
 	if resp.ContentLength > 0 {
 		svc.ContentLength = resp.ContentLength
 	}

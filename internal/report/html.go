@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
 	"sort"
 	"time"
@@ -11,15 +12,35 @@ import (
 
 func RenderHTML(result *model.Result) string {
 	funcs := template.FuncMap{
-		"formatTime": formatTime,
-		"join":       join,
-		"sortedKeys": sortedKeys,
-		"param":      func(m map[string]any, key string) any { return m[key] },
+		"formatTime":   formatTime,
+		"join":         join,
+		"sortedKeys":   sortedKeys,
+		"param":        func(m map[string]any, key string) any { return m[key] },
+		"metadataRows": metadataRows,
 	}
 	tpl := template.Must(template.New("report").Funcs(funcs).Parse(htmlTemplate))
 	var b bytes.Buffer
 	_ = tpl.Execute(&b, result)
 	return b.String()
+}
+
+// metadataRows returns a vulnerability's metadata as sorted key/value pairs so
+// the report can surface CVE/vendor/product/reference classification that nuclei
+// captures. Returns nil for empty metadata.
+func metadataRows(m map[string]any) []struct{ K, V string } {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]struct{ K, V string }, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, struct{ K, V string }{K: k, V: fmt.Sprintf("%v", m[k])})
+	}
+	return out
 }
 
 func formatTime(t time.Time) string {
@@ -97,7 +118,7 @@ const htmlTemplate = `<!doctype html>
   <section class="summary">
     <div class="metric"><span>状态</span><strong>{{.Scan.Status}}</strong></div>
     <div class="metric"><span>耗时</span><strong>{{.Scan.Duration}}</strong></div>
-    <div class="metric"><span>存活服务</span><strong>{{len .Targets}}</strong></div>
+    <div class="metric"><span>探测结果</span><strong>{{len .Targets}}</strong></div>
     <div class="metric"><span>POC 发现</span><strong>{{len .Vulnerabilities}}</strong></div>
   </section>
 
@@ -108,6 +129,8 @@ const htmlTemplate = `<!doctype html>
     <tbody>
       <tr><th>引擎</th><td>{{.Scan.POC.Engine}}</td></tr>
       <tr><th>模板目录</th><td><code>{{.Scan.POC.TemplateDir}}</code></td></tr>
+      {{if .Scan.POC.TemplateCount}}<tr><th>模板数</th><td>{{.Scan.POC.TemplateCount}}</td></tr>{{end}}
+      {{if .Scan.POC.TemplateVersion}}<tr><th>模板版本</th><td>{{.Scan.POC.TemplateVersion}}</td></tr>{{end}}
       <tr><th>目标数</th><td>{{.Scan.POC.Targets}}</td></tr>
       <tr><th>发现数</th><td>{{.Scan.POC.Findings}}</td></tr>
       <tr><th>耗时</th><td>{{.Scan.POC.Duration}}</td></tr>
@@ -124,11 +147,11 @@ const htmlTemplate = `<!doctype html>
   <h2>服务探测结果</h2>
   {{if .Targets}}
   <table>
-    <thead><tr><th>#</th><th>主机</th><th>端口</th><th>协议</th><th>状态</th><th>标题</th><th>Server</th><th>技术栈</th><th>内容类型</th><th>Favicon</th><th>URL</th><th>错误</th></tr></thead>
+    <thead><tr><th>#</th><th>主机</th><th>端口</th><th>协议</th><th>状态</th><th>标题</th><th>Server</th><th>技术栈</th><th>内容类型</th><th>Favicon</th><th>URL</th><th>Banner</th><th>错误</th></tr></thead>
     <tbody>
       {{range $i, $svc := .Targets}}
       <tr>
-        <td>{{$i}}</td><td>{{$svc.Host}}</td><td>{{$svc.Port}}</td><td>{{$svc.Protocol}}</td><td>{{$svc.StatusCode}}</td><td>{{$svc.Title}}</td><td>{{$svc.Server}}</td><td>{{join $svc.Technologies}}</td><td>{{$svc.ContentType}}</td><td>{{$svc.FaviconHash}}</td><td>{{if $svc.URL}}<a href="{{$svc.URL}}">{{$svc.URL}}</a>{{end}}</td><td>{{if $svc.Error}}<span class="severity-high">{{$svc.Error}}</span>{{end}}</td>
+        <td>{{$i}}</td><td>{{$svc.Host}}</td><td>{{$svc.Port}}</td><td>{{$svc.Protocol}}</td><td>{{$svc.StatusCode}}</td><td>{{$svc.Title}}</td><td>{{$svc.Server}}</td><td>{{join $svc.Technologies}}</td><td>{{$svc.ContentType}}</td><td>{{$svc.FaviconHash}}</td><td>{{if $svc.URL}}<a href="{{$svc.URL}}">{{$svc.URL}}</a>{{end}}</td><td>{{$svc.Banner}}</td><td>{{if $svc.Error}}<span class="severity-high">{{$svc.Error}}</span>{{end}}</td>
       </tr>
       {{end}}
     </tbody>
@@ -138,11 +161,12 @@ const htmlTemplate = `<!doctype html>
   <h2>POC 发现</h2>
   {{if .Vulnerabilities}}
   <table>
-    <thead><tr><th>#</th><th>严重级别</th><th>模板</th><th>名称</th><th>目标</th><th>匹配</th></tr></thead>
+    <thead><tr><th>#</th><th>严重级别</th><th>模板</th><th>名称</th><th>目标</th><th>匹配</th><th>元数据</th></tr></thead>
     <tbody>
       {{range $i, $v := .Vulnerabilities}}
       <tr>
         <td>{{$i}}</td><td class="severity-{{$v.Severity}}">{{$v.Severity}}</td><td>{{$v.TemplateID}}</td><td>{{$v.Name}}</td><td>{{$v.Target}}</td><td>{{$v.MatchedAt}}</td>
+        <td>{{if metadataRows $v.Metadata}}{{range $m := metadataRows $v.Metadata}}<code>{{$m.K}}={{$m.V}}</code> {{end}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
       {{end}}
     </tbody>

@@ -115,11 +115,15 @@ Data:
   "engine": "nuclei",
   "targets": 1,
   "template_dir": "D:\\github_projects\\SpringX-Scanner\\pocs\\nuclei",
+  "template_count": 6421,
+  "template_version": "9.8.2",
   "tags": ["cve"],
   "severity": "critical,high",
   "ids": ["springx-smoke"]
 }
 ```
+
+`template_count` and `template_version` are omitted when 0/empty (e.g. when POC is skipped).
 
 ### `vulnerability_found`
 
@@ -167,6 +171,8 @@ Data:
   "findings": 1,
   "duration": "2.351s",
   "template_dir": "D:\\github_projects\\SpringX-Scanner\\testdata\\nuclei",
+  "template_count": 1,
+  "template_version": "",
   "skipped": false,
   "skip_reason": "",
   "error": ""

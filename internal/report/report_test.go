@@ -43,10 +43,10 @@ func sampleResult() *model.Result {
 		},
 		Targets: []model.Service{
 			{Host: "example.com", Port: 443, Protocol: "WEB应用", Scheme: "https", URL: "https://example.com/", StatusCode: 200, Title: "Example", Server: "nginx", Technologies: []string{"Nginx", "PHP"}, ContentType: "text/html", FaviconHash: "12345"},
-			{Host: "127.0.0.1", Port: 8080, Protocol: "http", URL: "http://127.0.0.1:8080/", StatusCode: 200, Title: "Local", Server: "go", Technologies: []string{"Go"}, ContentType: "text/plain"},
+			{Host: "127.0.0.1", Port: 8080, Protocol: "http", URL: "http://127.0.0.1:8080/", StatusCode: 200, Title: "Local", Server: "go", Technologies: []string{"Go"}, ContentType: "text/plain", Banner: "SSH-2.0-OpenSSH_8.9"},
 		},
 		Vulnerabilities: []model.Vulnerability{
-			{Engine: "nuclei", TemplateID: "springx-one", Name: "One", Severity: "high", Target: "https://example.com/", MatchedAt: "https://example.com/one", Timestamp: start},
+			{Engine: "nuclei", TemplateID: "springx-one", Name: "One", Severity: "high", Target: "https://example.com/", MatchedAt: "https://example.com/one", Timestamp: start, Metadata: map[string]any{"cve": "CVE-2026-0001", "vendor": "SpringX"}},
 			{Engine: "nuclei", TemplateID: "springx-two", Name: "Two", Severity: "critical", Target: "http://127.0.0.1:8080/", MatchedAt: "http://127.0.0.1:8080/two", Timestamp: start},
 		},
 		Logs: []string{"log one", "log two"},
@@ -73,6 +73,9 @@ func TestRenderHTMLStructureAndCounts(t *testing.T) {
 		"severity-critical",
 		"WEB应用",
 		"Nginx, PHP",
+		"SSH-2.0-OpenSSH_8.9",
+		"cve=CVE-2026-0001",
+		"vendor=SpringX",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("html report missing %q", want)
@@ -94,8 +97,9 @@ func TestRenderMarkdownStructureAndCounts(t *testing.T) {
 		"## 扫描概览",
 		"## 服务探测结果",
 		"## POC 发现",
-		"| # | 主机 | 端口 | 协议 | 状态 | 标题 | Server | 技术栈 | 内容类型 | Favicon | URL | 错误 |",
-		"| # | 严重级别 | 模板 | 名称 | 目标 | 匹配 |",
+		"| # | 主机 | 端口 | 协议 | 状态 | 标题 | Server | 技术栈 | 内容类型 | Favicon | URL | Banner | 错误 |",
+		"| # | 严重级别 | 模板 | 名称 | 目标 | 匹配 | 元数据 |",
+		"cve=CVE-2026-0001; vendor=SpringX",
 		"- `web`: `true`",
 		"- `no-browser`: `true`",
 	} {

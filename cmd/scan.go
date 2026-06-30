@@ -52,6 +52,7 @@ type scanOptions struct {
 	pocConcurrency    int
 	httpConcurrency   int
 	httpTimeout       int
+	useBuiltinSmoke   bool
 	engines           string
 	logFormat         string
 	jsonlOnly         bool
@@ -117,6 +118,7 @@ var scanCmd = &cobra.Command{
 			POCConcurrency:  scanOpts.pocConcurrency,
 			HTTPConcurrency: scanOpts.httpConcurrency,
 			HTTPTimeoutSec:  scanOpts.httpTimeout,
+			UseBuiltinSmoke: scanOpts.useBuiltinSmoke,
 			Engines:         scanOpts.engines,
 			TemplateDir:     templateDir,
 			TempDir:         scanOpts.tempDir,
@@ -191,6 +193,7 @@ func init() {
 	scanCmd.Flags().IntVar(&scanOpts.pocConcurrency, "poc-concurrency", 5, "POC scanning concurrency")
 	scanCmd.Flags().IntVar(&scanOpts.httpConcurrency, "http-concurrency", 10, "HTTP probe concurrency")
 	scanCmd.Flags().IntVar(&scanOpts.httpTimeout, "http-timeout", 10, "HTTP request timeout in seconds")
+	scanCmd.Flags().BoolVar(&scanOpts.useBuiltinSmoke, "use-builtin-smoke-template", false, "use the embedded springx-smoke template for testing (not a real vulnerability template)")
 	scanCmd.Flags().StringVar(&scanOpts.engines, "engines", "", "compatibility engine selector")
 	scanCmd.Flags().StringVar(&scanOpts.logFormat, "log-format", "mixed", "output log format: mixed or jsonl")
 	scanCmd.Flags().BoolVar(&scanOpts.jsonlOnly, "jsonl-only", false, "shortcut for --log-format jsonl")
