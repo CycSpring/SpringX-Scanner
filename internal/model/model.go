@@ -89,4 +89,16 @@ type Vulnerability struct {
 	ResponseSummary  string         `json:"response_summary,omitempty"`
 	Timestamp        time.Time      `json:"timestamp"`
 	Metadata         map[string]any `json:"metadata,omitempty"`
+	// Structured classification fields extracted from nuclei's Info block so
+	// reports can render them as labeled sections instead of a struct dump.
+	Tags        []string `json:"tags,omitempty"`
+	References  []string `json:"references,omitempty"`
+	Remediation string   `json:"remediation,omitempty"`
+	Impact      string   `json:"impact,omitempty"`
+	CVE         []string `json:"cve,omitempty"`
+	CWE         []string `json:"cwe,omitempty"`
+	CVSSScore   float64  `json:"cvss_score,omitempty"`
+	CVSSMetrics string   `json:"cvss_metrics,omitempty"`
+	CPE         string   `json:"cpe,omitempty"`
+	CURLCommand string   `json:"curl_command,omitempty"`
 }

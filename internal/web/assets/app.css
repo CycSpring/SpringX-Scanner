@@ -108,3 +108,9 @@ tr.detail-row pre {
 }
 .chips .badge { display: inline-block; }
 .empty { color: var(--muted); font-style: italic; }
+.muted.ok { color: #2e7d32; }
+.muted.warn { color: #c62828; }
+.progress-bar { height: 8px; background: var(--panel-2, #1e2a3a); border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--blue, #3b82f6), #60a5fa); border-radius: 4px; transition: width .4s ease; position: relative; }
+.progress-fill::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.3), transparent); animation: shimmer 1.5s infinite; }
+@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }

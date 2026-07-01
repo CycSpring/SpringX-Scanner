@@ -3,6 +3,7 @@ module github.com/CycSpring/SpringX-Scanner
 go 1.25.7
 
 require (
+	github.com/go-git/go-git/v5 v5.19.1
 	github.com/projectdiscovery/nuclei/v3 v3.9.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sys v0.45.0
@@ -132,7 +133,6 @@ require (
 	github.com/go-fed/httpsig v1.1.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
-	github.com/go-git/go-git/v5 v5.19.1 // indirect
 	github.com/go-ldap/ldap/v3 v3.4.12 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

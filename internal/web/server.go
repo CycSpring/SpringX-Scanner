@@ -102,6 +102,10 @@ func (s *Server) registerRoutes() {
 	// Reports API (path-restricted to reports/data).
 	s.mux.HandleFunc("GET /api/reports", s.handleListReports)
 	s.mux.HandleFunc("GET /api/reports/{name}", s.handleGetReport)
+
+	// POC templates API: query status or pull official nuclei-templates.
+	s.mux.HandleFunc("GET /api/templates", s.handleGetTemplates)
+	s.mux.HandleFunc("POST /api/templates/pull", s.handlePullTemplates)
 }
 
 // handleIndex serves the embedded SPA shell.
