@@ -191,6 +191,27 @@ func (r *Runner) runPOC(ctx context.Context, result *model.Result) error {
 			r.Logf("[INF] [NucleiPOC] %s - [%s] %s", v.Target, severityLabel(v.Severity), v.TemplateID)
 			r.emitter.Emit("vulnerability_found", vulnEvent(v))
 		},
+		OnProgress: func(s nucleirunner.ProgressStats) {
+			percent := 0
+			if s.Total > 0 {
+				pct := int(float64(s.Done) / float64(s.Total) * 100)
+				if pct > 100 {
+					pct = 100
+				}
+				percent = pct
+			}
+			r.emitter.Emit("poc_progress", map[string]any{
+				"engine":         "nuclei",
+				"done":           s.Done,
+				"total":          s.Total,
+				"percent":        percent,
+				"rules":          s.Rules,
+				"findings":       s.Found,
+				"errors":         s.Errors,
+				"template_count": tplCount,
+				"targets":        len(targets),
+			})
+		},
 	})
 	result.Vulnerabilities = append(result.Vulnerabilities, vulns...)
 	result.Scan.POC.Findings = len(vulns)

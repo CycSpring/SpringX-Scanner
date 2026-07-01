@@ -20,6 +20,16 @@
 
   <!-- 扫描 tab -->
   <section id="tab-scan">
+    <div class="panel" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <h2 style="margin:0">POC 模板</h2>
+        <span class="muted" id="tplStatus">未加载</span>
+        <button type="button" class="secondary" id="tplRefresh">刷新状态</button>
+        <button type="button" id="tplPull">拉取官方模板</button>
+        <label class="muted" style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="tplForce"> 强制重新克隆</label>
+      </div>
+      <p class="muted" style="margin:8px 0 0">从 <code>projectdiscovery/nuclei-templates</code> 拉取官方 POC 模板到 <code>pocs/nuclei</code>。首次约数百 MB，请耐心等待。</p>
+    </div>
     <div class="grid2">
       <div class="panel">
         <h2 style="margin-top:0">发起扫描</h2>
@@ -59,6 +69,14 @@
           <div class="metric"><span>引擎 scan_id</span><strong id="m-scanid" style="font-size:13px">—</strong></div>
           <div class="metric"><span>存活服务</span><strong id="m-services">0</strong></div>
           <div class="metric"><span>POC 发现</span><strong id="m-vulns">0</strong></div>
+        </div>
+        <div id="pocProgress" class="hidden" style="margin-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span class="muted">POC 扫描进行中 <strong id="pocPercent" style="margin-left:6px">0%</strong></span>
+            <span class="muted" id="pocElapsed" style="font-size:13px">0s</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" id="pocBar"></div></div>
+          <div class="muted" id="pocDetail" style="font-size:12px;margin-top:4px">已发现 0 个漏洞</div>
         </div>
         <h3>服务（实时）</h3>
         <table id="svcTable" class="hidden">

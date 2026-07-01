@@ -24,8 +24,11 @@ import (
 //
 // Run with: go test -tags smoke ./internal/web/...
 func TestSmokeRealScanFullChain(t *testing.T) {
-	// 1. Build the real binary into a temp dir (os.Executable() inside go test
-	//    returns the test binary, not springx.exe, so we must build our own).
+	// 1. Build the real binary into a stable temp dir (NOT t.TempDir(), which
+	//    auto-cleans and fails on Windows when the OS still holds a file handle
+	//    to the just-executed exe). We use D:\Temp with a retry-based cleanup
+	//    instead, because nuclei and the child process may briefly keep handles
+	//    open past test completion.
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("resolve repo root: %v", err)
@@ -34,7 +37,26 @@ func TestSmokeRealScanFullChain(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		exeName = "springx.exe"
 	}
-	exePath := filepath.Join(t.TempDir(), exeName)
+	// Use a stable smoke-bin dir under D:\Temp (or os.TempDir on non-Windows).
+	smokeBase := os.Getenv("TEMP")
+	if smokeBase == "" {
+		smokeBase = os.TempDir()
+	}
+	smokeBinDir := filepath.Join(smokeBase, "springx-smoke-bin")
+	if err := os.MkdirAll(smokeBinDir, 0o755); err != nil {
+		t.Fatalf("mkdir smoke bin dir: %v", err)
+	}
+	t.Cleanup(func() {
+		// Best-effort cleanup with retries — Windows may hold the file handle
+		// for a moment after the child process exits.
+		for i := 0; i < 5; i++ {
+			if err := os.RemoveAll(smokeBinDir); err == nil {
+				return
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	})
+	exePath := filepath.Join(smokeBinDir, exeName)
 	build := exec.Command("go", "build", "-o", exePath, ".")
 	build.Dir = repoRoot
 	build.Env = append(os.Environ(),
@@ -64,7 +86,18 @@ func TestSmokeRealScanFullChain(t *testing.T) {
 		t.Fatalf("springx-smoke.yaml not found at %s: %v", templateDir, err)
 	}
 
-	workDir := t.TempDir()
+	// 3b. WorkDir also uses D:\Temp (not t.TempDir()) because nuclei writes
+	//     temporary files and may hold handles past test completion on Windows.
+	workDir := filepath.Join(smokeBase, "springx-smoke-work")
+	_ = os.MkdirAll(workDir, 0o755)
+	t.Cleanup(func() {
+		for i := 0; i < 5; i++ {
+			if err := os.RemoveAll(workDir); err == nil {
+				return
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	})
 	mgr := NewScanManager(ScanManagerOptions{
 		ExePath: exePath,
 		WorkDir: workDir,

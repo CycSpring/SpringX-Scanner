@@ -224,6 +224,70 @@ func TestServerIndexServesHTML(t *testing.T) {
 	}
 }
 
+// TestServerTemplatesIgnoresDirFromRequest verifies that neither
+// GET /api/templates?dir=... nor POST /api/templates/pull with a body "dir"
+// can override the target directory. This prevents an attacker from using
+// --force to os.RemoveAll an arbitrary path via the WebUI API.
+func TestServerTemplatesIgnoresDirFromRequest(t *testing.T) {
+	srv, err := NewServer(Options{WorkDir: t.TempDir(), ExePath: "fake"})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// 1. GET /api/templates?dir=D:\evil must still report the default dir.
+	res, err := ts.Client().Get(ts.URL + "/api/templates?dir=D%3A%5CEvil")
+	if err != nil {
+		t.Fatalf("GET /api/templates: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	var getResp struct {
+		Dir string `json:"dir"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&getResp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	expected := srv.defaultTemplateDir()
+	if getResp.Dir != expected {
+		t.Fatalf("GET /api/templates?dir=... returned dir %q, want %q (should ignore query param)", getResp.Dir, expected)
+	}
+
+	// 2. POST /api/templates/pull with {"dir":"D:\\evil","force":false} must NOT
+	//    use the evil dir. We seed the default dir with a stray file so the pull
+	//    refuses (non-empty, non-git) without touching the network. The error
+	//    should reference the default pocs/nuclei dir, not "D:\evil".
+	defaultDir := srv.defaultTemplateDir()
+	if err := os.MkdirAll(defaultDir, 0o755); err != nil {
+		t.Fatalf("mkdir default dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(defaultDir, "stray.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write stray file: %v", err)
+	}
+	body := strings.NewReader(`{"dir":"D:\\Evil","force":false}`)
+	res2, err := ts.Client().Post(ts.URL+"/api/templates/pull", "application/json", body)
+	if err != nil {
+		t.Fatalf("POST /api/templates/pull: %v", err)
+	}
+	defer res2.Body.Close()
+	// The pull will fail (non-empty non-git dir), which is expected.
+	var pullResp struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(res2.Body).Decode(&pullResp); err != nil {
+		t.Fatalf("decode pull response: %v", err)
+	}
+	if strings.Contains(pullResp.Error, "Evil") {
+		t.Fatalf("pull error should not reference the ignored dir, got: %q", pullResp.Error)
+	}
+	if !strings.Contains(pullResp.Error, "pocs") {
+		t.Fatalf("pull error should reference the default pocs/nuclei dir, got: %q", pullResp.Error)
+	}
+}
+
 func urlEscape(s string) string {
 	// Minimal percent-encoding for the test path segments.
 	var b strings.Builder

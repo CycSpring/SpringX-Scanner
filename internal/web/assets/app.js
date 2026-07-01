@@ -17,11 +17,13 @@ document.querySelectorAll(".tab").forEach((t) => {
 // ---- version line ----
 fetch("/api/health").then(() => {
   $("versionLine").textContent = "WebUI 已就绪";
+  loadTplStatus();
 });
 
 // ---- scan form ----
 let currentJob = null;
 let eventSource = null;
+let scanFinished = false;
 
 $("scanForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -51,10 +53,17 @@ $("scanForm").addEventListener("submit", async (e) => {
 });
 
 $("cancelBtn").addEventListener("click", async () => {
-  if (!currentJob) return;
+  if (!currentJob || scanFinished) return;
   try {
-    await fetch(`/api/scan/${currentJob}/cancel`, { method: "POST" });
-    appendLog("info", "已发送取消请求…");
+    const res = await fetch(`/api/scan/${currentJob}/cancel`, { method: "POST" });
+    if (res.ok) {
+      appendLog("info", "已发送取消请求，等待扫描停止…");
+      setMetric("m-status", "正在取消…", "stopped");
+      $("cancelBtn").disabled = true;
+    } else {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      appendLog("error", "取消失败: " + (err.error || res.status));
+    }
   } catch (err) {
     appendLog("error", "取消失败: " + err.message);
   }
@@ -88,6 +97,7 @@ function collectForm() {
 // ---- SSE ----
 function subscribeEvents(jobID) {
   if (eventSource) eventSource.close();
+  scanFinished = false;
   eventSource = new EventSource(`/api/events?id=${encodeURIComponent(jobID)}`);
   eventSource.onmessage = (msg) => {
     let ev;
@@ -99,11 +109,19 @@ function subscribeEvents(jobID) {
     handleEvent(ev);
   };
   eventSource.onerror = () => {
-    // EventSource auto-reconnects; cached history on the server replays missed events.
+    // Once the scan is finished, close the stream so the browser stops
+    // auto-reconnecting (which otherwise loops forever replaying history).
+    if (scanFinished) {
+      eventSource.close();
+      eventSource = null;
+    }
+    // While running, EventSource auto-reconnects; cached history replays missed events.
   };
 }
 
 function resetScanView() {
+  scanFinished = false;
+  $("cancelBtn").disabled = false;
   $("svcTable").querySelector("tbody").innerHTML = "";
   $("vulnTable").querySelector("tbody").innerHTML = "";
   $("svcTable").classList.add("hidden");
@@ -115,6 +133,7 @@ function resetScanView() {
   setMetric("m-scanid", "—");
   setMetric("m-services", "0");
   setMetric("m-vulns", "0");
+  $("pocProgress").classList.add("hidden");
 }
 
 function handleEvent(ev) {
@@ -134,10 +153,15 @@ function handleEvent(ev) {
       addVulnRow(ev.data);
       break;
     case "poc_started":
-      appendLog("info", `POC 启动: engine=${ev.data?.engine} targets=${ev.data?.targets}`);
+      appendLog("info", `POC 启动: engine=${ev.data?.engine} targets=${ev.data?.targets} templates=${ev.data?.template_count || "—"}`);
+      showPocProgress(ev.data?.template_count || 0, ev.data?.targets || 0);
+      break;
+    case "poc_progress":
+      updatePocProgress(ev.data);
       break;
     case "poc_completed":
-      appendLog("info", `POC 完成: findings=${ev.data?.findings} skipped=${ev.data?.skipped}`);
+      appendLog("info", `POC 完成: findings=${ev.data?.findings} skipped=${ev.data?.skipped} duration=${ev.data?.duration || "—"}`);
+      hidePocProgress(ev.data?.findings || 0);
       break;
     case "scan_completed":
       setStatusFromCompleted(ev.data?.status || "completed");
@@ -162,9 +186,14 @@ function setStatusFromCompleted(status) {
 }
 
 function finishScan() {
+  scanFinished = true;
   $("cancelBtn").classList.add("hidden");
+  $("cancelBtn").disabled = false;
+  // Close the SSE stream now that the terminal event arrived, so the browser
+  // does not auto-reconnect and replay history forever.
   if (eventSource) {
-    // keep stream open until server closes it; terminal event already received
+    eventSource.close();
+    eventSource = null;
   }
 }
 
@@ -275,6 +304,41 @@ function chips(arr) {
   return `<span class="chips">${arr.map((x) => `<span class="badge">${esc(String(x))}</span>`).join("")}</span>`;
 }
 
+// ---- POC progress ----
+let pocTimer = null;
+let pocStartTs = 0;
+
+function showPocProgress(templateCount, targets) {
+  $("pocProgress").classList.remove("hidden");
+  $("pocBar").style.width = "0%";
+  $("pocElapsed").textContent = "0s";
+  $("pocDetail").textContent = `已发现 0 个漏洞 · ${templateCount} 个模板 · ${targets} 个目标`;
+  pocStartTs = Date.now();
+  // Local ticker updates elapsed time every second between server heartbeats.
+  if (pocTimer) clearInterval(pocTimer);
+  pocTimer = setInterval(() => {
+    const sec = Math.floor((Date.now() - pocStartTs) / 1000);
+    $("pocElapsed").textContent = sec >= 60 ? `${Math.floor(sec/60)}m${sec%60}s` : `${sec}s`;
+  }, 1000);
+}
+
+function updatePocProgress(data) {
+  const done = data.done ?? 0;
+  const total = data.total ?? 0;
+  const percent = data.percent ?? 0;
+  const findings = data.findings ?? 0;
+  $("pocBar").style.width = percent + "%";
+  $("pocPercent").textContent = percent + "%";
+  $("pocDetail").textContent = `已处理 ${done}/${total} 请求 · 已发现 ${findings} 个漏洞 · ${data.rules || 0} 个模板`;
+  setMetric("m-vulns", String(findings));
+}
+
+function hidePocProgress(findings) {
+  if (pocTimer) { clearInterval(pocTimer); pocTimer = null; }
+  $("pocBar").style.width = "0%";
+  $("pocProgress").classList.add("hidden");
+}
+
 // ---- event log ----
 function appendLog(type, msg) {
   const log = $("eventLog");
@@ -299,6 +363,8 @@ function describe(ev) {
       return `${d.host || ""}:${d.port || ""} ${d.title || ""} ${d.server || ""}`.trim();
     case "vulnerability_found":
       return `${d.template_id} [${d.severity}] ${d.target || ""}`;
+    case "poc_progress":
+      return `POC 进度: ${d.percent ?? 0}% (${d.done ?? 0}/${d.total ?? 0}) 已发现 ${d.findings ?? 0} 个`;
     case "log": return d.message || "";
     default: return "";
   }
@@ -444,6 +510,55 @@ $("rd-back").addEventListener("click", () => {
   $("reportDetail").classList.add("hidden");
   $("reportsTable").classList.remove("hidden");
   loadReports();
+});
+
+// ---- POC templates: status + pull ----
+function setTplStatus(text, cls) {
+  const el = $("tplStatus");
+  el.textContent = text;
+  el.className = "muted" + (cls ? " " + cls : "");
+}
+
+async function loadTplStatus() {
+  setTplStatus("查询中…");
+  try {
+    const res = await fetch("/api/templates");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (!data.exists) {
+      setTplStatus(`未拉取（${data.dir}）`, "warn");
+    } else {
+      setTplStatus(`已加载 ${data.count} 个模板${data.version ? " · " + data.version : ""}`, "ok");
+    }
+  } catch (err) {
+    setTplStatus("查询失败: " + err.message, "warn");
+  }
+}
+
+$("tplRefresh").addEventListener("click", loadTplStatus);
+
+$("tplPull").addEventListener("click", async () => {
+  const btn = $("tplPull");
+  if (!confirm("将从 GitHub 拉取官方 nuclei-templates（浅克隆，可能需数分钟）。继续？")) return;
+  btn.disabled = true;
+  const force = $("tplForce").checked;
+  setTplStatus(force ? "强制重新克隆中…（可能较慢）" : "拉取中…（可能较慢）");
+  try {
+    const res = await fetch("/api/templates/pull", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
+    setTplStatus(`${data.action === "cloned" ? "克隆" : "更新"}完成：${data.count} 个模板 · ${data.version || data.commit}`, "ok");
+    appendLog("info", `POC 模板就绪：${data.action} commit=${data.commit} count=${data.count}`);
+  } catch (err) {
+    setTplStatus("拉取失败: " + err.message, "warn");
+    appendLog("error", "POC 模板拉取失败: " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // ---- helpers ----
