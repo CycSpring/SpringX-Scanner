@@ -7,28 +7,27 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<main>
-  <header>
+<div class="topbar">
+  <div class="brand">
+    <div class="logo">SX</div>
     <h1>SpringX Scanner</h1>
-    <span class="sub" id="versionLine"></span>
-  </header>
-
-  <nav class="tabs">
+  </div>
+  <span class="sub" id="versionLine"></span>
+</div>
+<main>
+  <div class="tabs">
     <div class="tab active" data-tab="scan">扫描</div>
     <div class="tab" data-tab="reports">历史报告</div>
-  </nav>
+  </div>
 
   <!-- 扫描 tab -->
   <section id="tab-scan">
-    <div class="panel" style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <h2 style="margin:0">POC 模板</h2>
-        <span class="muted" id="tplStatus">未加载</span>
-        <button type="button" class="secondary" id="tplRefresh">刷新状态</button>
-        <button type="button" id="tplPull">拉取官方模板</button>
-        <label class="muted" style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="tplForce"> 强制重新克隆</label>
-      </div>
-      <p class="muted" style="margin:8px 0 0">从 <code>projectdiscovery/nuclei-templates</code> 拉取官方 POC 模板到 <code>pocs/nuclei</code>。首次约数百 MB，请耐心等待。</p>
+    <div class="tpl-bar">
+      <span class="muted">POC 模板：</span>
+      <span class="muted" id="tplStatus">查询中…</span>
+      <button type="button" class="link-btn" id="tplRefresh">刷新</button>
+      <button type="button" class="link-btn" id="tplPull">拉取官方模板</button>
+      <label class="muted" style="display:inline-flex;align-items:center;gap:3px;margin:0"><input type="checkbox" id="tplForce" style="width:auto"> 强制重新克隆</label>
     </div>
     <div class="grid2">
       <div class="panel">
@@ -43,15 +42,50 @@
             <div><label>线程（-t）</label><input id="f-threads" type="number" value="5" min="1"></div>
             <div><label>超时分钟（--done）</label><input id="f-done" type="number" value="10" min="1"></div>
             <div><label>代理（-x）</label><input id="f-proxy" placeholder="http://127.0.0.1:8080"></div>
-            <div><label>Nuclei Tags（--nuclei-tags）</label><input id="f-nuclei-tags"></div>
-            <div><label>Nuclei Severity（--nuclei-severity）</label><input id="f-nuclei-severity" placeholder="critical,high"></div>
-            <div><label>Nuclei IDs（--nuclei-ids）</label><input id="f-nuclei-ids"></div>
+            <div class="full">
+              <label>Nuclei Tags（--nuclei-tags，点击追加，可多选）</label>
+              <input id="f-nuclei-tags" placeholder="cve,exposure,fuzzing… 也可直接输入">
+              <div class="chip-picker" id="nucleiTagsChips">
+                <button type="button" class="chip" data-tag="cve">CVE</button>
+                <button type="button" class="chip" data-tag="exposure">敏感信息泄露</button>
+                <button type="button" class="chip" data-tag="fuzzing">模糊测试</button>
+                <button type="button" class="chip" data-tag="injection">注入</button>
+                <button type="button" class="chip" data-tag="lfi">LFI</button>
+                <button type="button" class="chip" data-tag="rce">RCE</button>
+                <button type="button" class="chip" data-tag="sqli">SQLi</button>
+                <button type="button" class="chip" data-tag="xss">XSS</button>
+                <button type="button" class="chip" data-tag="ssrf">SSRF</button>
+                <button type="button" class="chip" data-tag="redirect">开放重定向</button>
+                <button type="button" class="chip" data-tag="misconfig">配置错误</button>
+                <button type="button" class="chip" data-tag="takeover">子域接管</button>
+                <button type="button" class="chip" data-tag="default-login">默认凭证</button>
+                <button type="button" class="chip" data-tag="tech">技术识别</button>
+                <button type="button" class="chip" data-tag="malware">恶意软件</button>
+                <button type="button" class="chip" data-tag="oast">OAST</button>
+                <button type="button" class="chip" data-tag="fileupload">文件上传</button>
+                <button type="button" class="chip" data-tag="deserialization">反序列化</button>
+                <button type="button" class="chip" data-tag="csrf">CSRF</button>
+                <button type="button" class="chip" data-tag="dns">DNS</button>
+                <button type="button" class="chip" data-tag="brute-force">暴力破解</button>
+              </div>
+            </div>
+            <div>
+              <label>Nuclei Severity（--nuclei-severity，多选）</label>
+              <div class="check-group" id="f-nuclei-severity">
+                <label class="check-item"><input type="checkbox" value="critical" style="width:auto"> <span class="severity-critical">Critical</span></label>
+                <label class="check-item"><input type="checkbox" value="high" style="width:auto"> <span class="severity-high">High</span></label>
+                <label class="check-item"><input type="checkbox" value="medium" style="width:auto"> <span class="severity-medium">Medium</span></label>
+                <label class="check-item"><input type="checkbox" value="low" style="width:auto"> <span class="severity-low">Low</span></label>
+                <label class="check-item"><input type="checkbox" value="info" style="width:auto"> <span class="severity-info">Info</span></label>
+              </div>
+            </div>
+            <div><label>Nuclei IDs（--nuclei-ids，模板ID）</label><input id="f-nuclei-ids" placeholder="CVE-2021-44228,tech-detect"></div>
             <div><label>Nuclei 模板目录（--nuclei-template-dir）</label><input id="f-nuclei-template-dir"></div>
             <div><label>POC 并发（--poc-concurrency）</label><input id="f-poc-concurrency" type="number" value="5" min="1"></div>
             <div><label>TCP 超时秒（--gonmap-timeout）</label><input id="f-gonmap-timeout" type="number" value="5" min="1"></div>
             <div><label>临时目录（--temp-dir）</label><input id="f-temp-dir"></div>
             <div class="full" style="display:flex;align-items:center;gap:8px;margin-top:4px">
-              <input type="checkbox" id="f-nopoc"> <label style="margin:0" for="f-nopoc">禁用 POC（--nopoc）</label>
+              <input type="checkbox" id="f-nopoc" style="width:auto"> <label style="margin:0" for="f-nopoc">禁用 POC（--nopoc）</label>
             </div>
           </div>
           <div class="actions">
@@ -64,6 +98,20 @@
 
       <div class="panel">
         <h2 style="margin-top:0">扫描状态</h2>
+
+        <!-- 报告就绪横幅：扫描完成后醒目展示，点击直达报告 -->
+        <div id="reportBanner" class="report-banner hidden">
+          <div class="rb-icon" id="rbIcon">✅</div>
+          <div class="rb-text">
+            <div class="rb-title" id="rbTitle">扫描已完成</div>
+            <div class="rb-sub" id="rbSub">点击右侧按钮查看本次扫描的完整报告</div>
+          </div>
+          <div class="rb-actions">
+            <button type="button" id="rbViewBtn">📄 查看本次报告</button>
+            <button type="button" class="secondary" id="rbListBtn">历史报告列表</button>
+          </div>
+        </div>
+
         <div class="summary" id="metrics">
           <div class="metric"><span>状态</span><strong id="m-status">—</strong></div>
           <div class="metric"><span>引擎 scan_id</span><strong id="m-scanid" style="font-size:13px">—</strong></div>
@@ -93,7 +141,7 @@
       </div>
     </div>
 
-    <div class="panel" style="margin-top:24px">
+    <div class="panel" style="margin-top:20px">
       <h2 style="margin-top:0">事件流</h2>
       <div class="log" id="eventLog"><div class="line muted">等待扫描启动…</div></div>
     </div>
@@ -101,7 +149,7 @@
 
   <!-- 历史报告 tab -->
   <section id="tab-reports" class="hidden">
-    <div class="panel">
+    <div class="panel" style="margin-top:0">
       <h2 style="margin-top:0">历史报告</h2>
       <p class="muted">扫描完成后 JSON 报告写入 <code>reports/data/</code>。点击查看详情。</p>
       <table id="reportsTable" class="hidden">
@@ -110,7 +158,7 @@
       </table>
       <p class="muted" id="reportsEmpty">暂无报告。</p>
     </div>
-    <div class="panel hidden" id="reportDetail" style="margin-top:24px">
+    <div class="panel hidden" id="reportDetail" style="margin-top:20px">
       <h2 style="margin-top:0" id="rd-title">报告详情</h2>
       <button class="secondary" id="rd-back">← 返回列表</button>
       <div class="summary" id="rd-metrics"></div>

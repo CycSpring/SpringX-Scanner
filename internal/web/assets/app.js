@@ -24,6 +24,9 @@ fetch("/api/health").then(() => {
 let currentJob = null;
 let eventSource = null;
 let scanFinished = false;
+let currentReportName = null;  // 报告文件名（含 .json），来自 report_written 事件
+let scanCompleteFlag = false;  // scan_completed 是否已到达
+let reportWaitTimer = null;   // 兜底定时器：scan_completed 后若 report_written 迟迟不到则关 SSE
 
 $("scanForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -85,7 +88,7 @@ function collectForm() {
     proxy: $("f-proxy").value.trim(),
     nopoc: $("f-nopoc").checked,
     nuclei_tags: $("f-nuclei-tags").value.trim(),
-    nuclei_severity: $("f-nuclei-severity").value.trim(),
+    nuclei_severity: collectSeverity(),
     nuclei_ids: $("f-nuclei-ids").value.trim(),
     nuclei_template_dir: $("f-nuclei-template-dir").value.trim(),
     poc_concurrency: num("f-poc-concurrency"),
@@ -121,6 +124,9 @@ function subscribeEvents(jobID) {
 
 function resetScanView() {
   scanFinished = false;
+  if (reportWaitTimer) { clearTimeout(reportWaitTimer); reportWaitTimer = null; }
+  serviceCount = 0;
+  vulnCount = 0;
   $("cancelBtn").disabled = false;
   $("svcTable").querySelector("tbody").innerHTML = "";
   $("vulnTable").querySelector("tbody").innerHTML = "";
@@ -134,6 +140,9 @@ function resetScanView() {
   setMetric("m-services", "0");
   setMetric("m-vulns", "0");
   $("pocProgress").classList.add("hidden");
+  $("reportBanner").classList.add("hidden");
+  currentReportName = null;
+  scanCompleteFlag = false;
 }
 
 function handleEvent(ev) {
@@ -165,14 +174,27 @@ function handleEvent(ev) {
       break;
     case "scan_completed":
       setStatusFromCompleted(ev.data?.status || "completed");
-      finishScan();
+      scanCompleteFlag = true;
+      showReportBanner(ev.data?.status || "completed");
+      // 兜底：scan_completed 在 report_written 之前，不立即关 SSE。
+      // 但若 15s 后仍未收到 report_written（如服务端异常），强制收尾避免 SSE 悬挂。
+      if (reportWaitTimer) clearTimeout(reportWaitTimer);
+      reportWaitTimer = setTimeout(() => { finishScan(); }, 15000);
       break;
     case "scan_failed":
       setMetric("m-status", "failed", "failed");
+      showReportBanner("failed");
       finishScan();
       break;
     case "report_written":
       appendLog("info", `报告已生成: ${ev.data?.json || ""}`);
+      if (reportWaitTimer) { clearTimeout(reportWaitTimer); reportWaitTimer = null; }
+      if (ev.data?.json) {
+        currentReportName = extractReportName(ev.data.json);
+        if (scanCompleteFlag) enableReportButton();
+      }
+      // 报告写完，现在可以安全关闭 SSE 了。
+      finishScan();
       break;
     case "log":
       // already shown via describe(); no extra action
@@ -187,6 +209,7 @@ function setStatusFromCompleted(status) {
 
 function finishScan() {
   scanFinished = true;
+  if (reportWaitTimer) { clearTimeout(reportWaitTimer); reportWaitTimer = null; }
   $("cancelBtn").classList.add("hidden");
   $("cancelBtn").disabled = false;
   // Close the SSE stream now that the terminal event arrived, so the browser
@@ -538,8 +561,8 @@ async function loadTplStatus() {
 $("tplRefresh").addEventListener("click", loadTplStatus);
 
 $("tplPull").addEventListener("click", async () => {
-  const btn = $("tplPull");
   if (!confirm("将从 GitHub 拉取官方 nuclei-templates（浅克隆，可能需数分钟）。继续？")) return;
+  const btn = $("tplPull");
   btn.disabled = true;
   const force = $("tplForce").checked;
   setTplStatus(force ? "强制重新克隆中…（可能较慢）" : "拉取中…（可能较慢）");
@@ -559,6 +582,104 @@ $("tplPull").addEventListener("click", async () => {
   } finally {
     btn.disabled = false;
   }
+});
+
+// ---- report banner (醒目入口) ----
+// 扫描完成后在状态面板顶部展示横幅，一键直达本次报告。
+function showReportBanner(status) {
+  const banner = $("reportBanner");
+  banner.classList.remove("hidden", "warn", "failed");
+  const icon = $("rbIcon");
+  const title = $("rbTitle");
+  const sub = $("rbSub");
+  const btn = $("rbViewBtn");
+  const vulns = vulnCount;
+  if (status === "failed") {
+    banner.classList.add("failed");
+    icon.textContent = "❌";
+    title.textContent = "扫描失败";
+    sub.textContent = "扫描过程中发生错误，请查看事件流排查";
+    btn.disabled = true;
+    btn.textContent = "报告不可用";
+    return;
+  }
+  if (status === "stopped") {
+    banner.classList.add("warn");
+    icon.textContent = "⏹";
+    title.textContent = "扫描已停止";
+  } else {
+    icon.textContent = "✅";
+    title.textContent = "扫描已完成";
+  }
+  sub.textContent = vulns > 0
+    ? `本次发现 ${vulns} 个漏洞 · 点击查看完整报告`
+    : "未发现漏洞 · 点击查看完整报告";
+  if (currentReportName) {
+    enableReportButton();
+  } else {
+    btn.disabled = true;
+    btn.textContent = "⏳ 正在生成报告…";
+  }
+}
+
+function enableReportButton() {
+  const btn = $("rbViewBtn");
+  btn.disabled = false;
+  btn.textContent = "📄 查看本次报告";
+}
+
+// extractReportName 从 report_written 事件的 json 路径提取报告文件名。
+// 路径形如 .../reports/data/SpringX-Scan-20260626-101112.json，返回文件名（含 .json）。
+function extractReportName(jsonPath) {
+  if (!jsonPath) return null;
+  // 同时处理 / 和 \ 分隔符
+  const parts = String(jsonPath).replace(/\\/g, "/").split("/");
+  return parts[parts.length - 1] || null;
+}
+
+// "查看本次报告"按钮：切到历史报告 tab 并直接打开本次报告。
+$("rbViewBtn").addEventListener("click", () => {
+  if (!currentReportName) return;
+  // 激活 reports tab
+  document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+  document.querySelector('.tab[data-tab="reports"]').classList.add("active");
+  $("tab-scan").classList.add("hidden");
+  $("tab-reports").classList.remove("hidden");
+  openReport(currentReportName);
+});
+
+// "历史报告列表"按钮：切到历史报告 tab 并刷新列表。
+$("rbListBtn").addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+  document.querySelector('.tab[data-tab="reports"]').classList.add("active");
+  $("tab-scan").classList.add("hidden");
+  $("tab-reports").classList.remove("hidden");
+  loadReports();
+});
+
+// collectSeverity 从 checkbox 组收集选中的 severity 值，逗号分隔。
+function collectSeverity() {
+  const checked = document.querySelectorAll('#f-nuclei-severity input:checked');
+  return Array.from(checked).map((cb) => cb.value).join(",");
+}
+
+// ---- Nuclei Tags chip 选择器 ----
+// 点击 chip 追加/移除 tag 到输入框（逗号分隔，自动去重）。
+document.querySelectorAll("#nucleiTagsChips .chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    const input = $("f-nuclei-tags");
+    const tag = chip.dataset.tag;
+    const tags = input.value.split(",").map((t) => t.trim()).filter(Boolean);
+    const idx = tags.indexOf(tag);
+    if (idx >= 0) {
+      tags.splice(idx, 1);
+      chip.classList.remove("active");
+    } else {
+      tags.push(tag);
+      chip.classList.add("active");
+    }
+    input.value = tags.join(",");
+  });
 });
 
 // ---- helpers ----
